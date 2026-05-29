@@ -65,14 +65,14 @@ type ViewMode = 'dashboard' | 'log'
 
 export default function Home() {
   const [families, setFamilies] = useState<FamilyWithUsage[]>([])
-  const [settings, setSettings] = useState<AppSettings>({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, lastAutoReset: null })
+  const [settings, setSettings] = useState<AppSettings>({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, resetDay: 6, lastAutoReset: null })
   const [newFamilyName, setNewFamilyName] = useState('')
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const [editFamilyDialogOpen, setEditFamilyDialogOpen] = useState(false)
   const [editingFamily, setEditingFamily] = useState<{ id: string; name: string } | null>(null)
   const [editFamilyName, setEditFamilyName] = useState('')
-  const [settingsForm, setSettingsForm] = useState<AppSettings>({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, lastAutoReset: null })
+  const [settingsForm, setSettingsForm] = useState<AppSettings>({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, resetDay: 6, lastAutoReset: null })
   const [timers, setTimers] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [expandedFamily, setExpandedFamily] = useState<string | null>(null)
@@ -86,6 +86,21 @@ export default function Home() {
 
   const freeMin = settings.freeMinutesPerWeek
   const priceMin = settings.pricePerMinute
+
+  // Arabic day names for selector
+  const dayNames = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
+  const resetDayName = dayNames[settings.resetDay] || 'السبت'
+
+  // Calculate week start based on the selected reset day
+  const getWeekStart = (resetDay: number): Date => {
+    const now = new Date()
+    const dayOfWeek = now.getDay()
+    const daysSinceResetDay = (dayOfWeek - resetDay + 7) % 7
+    const weekStart = new Date(now)
+    weekStart.setDate(now.getDate() - daysSinceResetDay)
+    weekStart.setHours(0, 0, 0, 0)
+    return weekStart
+  }
 
   // Timer management
   const startTimerInterval = useCallback((familyId: string) => {
@@ -130,12 +145,7 @@ export default function Home() {
     setSettings(currentSettings)
 
     const familiesWithUsage: FamilyWithUsage[] = data.map((family) => {
-      const now = new Date()
-      const dayOfWeek = now.getDay()
-      const daysSinceSaturday = (dayOfWeek + 1) % 7
-      const weekStart = new Date(now)
-      weekStart.setDate(now.getDate() - daysSinceSaturday)
-      weekStart.setHours(0, 0, 0, 0)
+      const weekStart = getWeekStart(currentSettings.resetDay)
 
       const weeklySessions = family.sessions.filter((s) => new Date(s.startTime) >= weekStart)
       const weeklySeconds = weeklySessions.reduce((acc, s) => acc + s.duration, 0)
@@ -265,7 +275,7 @@ export default function Home() {
 
   const handleResetSettings = () => {
     storeResetSettings()
-    setSettingsForm({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, lastAutoReset: null })
+    setSettingsForm({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, resetDay: 6, lastAutoReset: null })
     refreshFamilies()
   }
 
@@ -282,13 +292,7 @@ export default function Home() {
       const currentSettings = getSettings()
       if (!currentSettings.autoResetWeekly) return
 
-      const now = new Date()
-      const dayOfWeek = now.getDay()
-      const daysSinceSaturday = (dayOfWeek + 1) % 7
-      const weekStart = new Date(now)
-      weekStart.setDate(now.getDate() - daysSinceSaturday)
-      weekStart.setHours(0, 0, 0, 0)
-
+      const weekStart = getWeekStart(currentSettings.resetDay)
       const lastReset = currentSettings.lastAutoReset ? new Date(currentSettings.lastAutoReset) : null
 
       // If no reset has happened yet, or last reset was before this week's start
@@ -387,6 +391,7 @@ export default function Home() {
                 <div className="flex items-center gap-1.5">
                   <Zap className="w-3.5 h-3.5 text-emerald-600" />
                   <span className="text-[10px] font-semibold text-emerald-700">تلقائي</span>
+                  <span className="text-[9px] text-emerald-600 bg-emerald-50 rounded px-1 py-0.5 border border-emerald-200">{resetDayName}</span>
                   <Switch checked={true} onCheckedChange={toggleAutoReset} className="scale-75 data-[state=checked]:bg-emerald-500" />
                 </div>
               ) : (
@@ -499,7 +504,7 @@ export default function Home() {
                   <Zap className="w-4 h-4 text-emerald-600" />
                   تصفير تلقائي أسبوعي
                 </Label>
-                <p className="text-[10px] text-gray-400">يتم تصفير العدادات تلقائياً كل يوم سبت</p>
+                <p className="text-[10px] text-gray-400">يتم تصفير العدادات تلقائياً كل أسبوع</p>
               </div>
               <Switch
                 checked={settingsForm.autoResetWeekly}
@@ -507,6 +512,33 @@ export default function Home() {
                 className="data-[state=checked]:bg-emerald-500"
               />
             </div>
+
+            {/* Reset Day Selector - only visible when auto reset is on */}
+            {settingsForm.autoResetWeekly && (
+              <div className="space-y-2 bg-emerald-50/50 border border-emerald-200 rounded-xl p-3">
+                <Label className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
+                  <CalendarDays className="w-4 h-4 text-emerald-600" />
+                  يوم التصفير الأسبوعي
+                </Label>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {dayNames.map((name, index) => (
+                    <button
+                      key={index}
+                      type="button"
+                      onClick={() => setSettingsForm((prev) => ({ ...prev, resetDay: index }))}
+                      className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                        settingsForm.resetDay === index
+                          ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200 border border-emerald-500'
+                          : 'bg-white text-gray-600 border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50'
+                      }`}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-gray-400">يتم تصفير العدادات تلقائياً كل يوم {dayNames[settingsForm.resetDay]}</p>
+              </div>
+            )}
 
             {/* Preview */}
             <div className="bg-gradient-to-r from-cyan-50 to-emerald-50 border border-cyan-200 rounded-xl p-3">
@@ -522,7 +554,7 @@ export default function Home() {
               <div className="flex justify-between text-xs text-gray-600 mt-1">
                 <span>التصفير:</span>
                 <span className={`font-bold ${settingsForm.autoResetWeekly ? 'text-emerald-700' : 'text-amber-700'}`}>
-                  {settingsForm.autoResetWeekly ? 'تلقائي كل أسبوع' : 'يدوي بالزر'}
+                  {settingsForm.autoResetWeekly ? `تلقائي كل ${dayNames[settingsForm.resetDay]}` : 'يدوي بالزر'}
                 </span>
               </div>
             </div>

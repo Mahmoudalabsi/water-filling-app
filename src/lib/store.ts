@@ -21,6 +21,7 @@ export interface AppSettings {
   freeMinutesPerWeek: number
   pricePerMinute: number
   autoResetWeekly: boolean
+  resetDay: number // 0=Sunday, 1=Monday, ..., 6=Saturday (default 6)
   lastAutoReset: string | null // ISO date of last auto-reset
 }
 
@@ -31,6 +32,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   freeMinutesPerWeek: 12,
   pricePerMinute: 0.5,
   autoResetWeekly: true,
+  resetDay: 6, // Saturday
   lastAutoReset: null,
 }
 
@@ -65,6 +67,7 @@ export function getSettings(): AppSettings {
         freeMinutesPerWeek: parsed.freeMinutesPerWeek ?? DEFAULT_SETTINGS.freeMinutesPerWeek,
         pricePerMinute: parsed.pricePerMinute ?? DEFAULT_SETTINGS.pricePerMinute,
         autoResetWeekly: parsed.autoResetWeekly ?? DEFAULT_SETTINGS.autoResetWeekly,
+        resetDay: parsed.resetDay ?? DEFAULT_SETTINGS.resetDay,
         lastAutoReset: parsed.lastAutoReset ?? DEFAULT_SETTINGS.lastAutoReset,
       }
     }
