@@ -17,7 +17,18 @@ export interface Family {
   sessions: Session[]
 }
 
+export interface AppSettings {
+  freeMinutesPerWeek: number
+  pricePerMinute: number
+}
+
 const STORAGE_KEY = 'water-filling-app'
+const SETTINGS_KEY = 'water-filling-settings'
+
+const DEFAULT_SETTINGS: AppSettings = {
+  freeMinutesPerWeek: 12,
+  pricePerMinute: 0.5,
+}
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 9)
@@ -38,6 +49,37 @@ function saveData(families: Family[]): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(families))
 }
 
+// ===== Settings =====
+
+export function getSettings(): AppSettings {
+  if (typeof window === 'undefined') return DEFAULT_SETTINGS
+  try {
+    const data = localStorage.getItem(SETTINGS_KEY)
+    if (data) {
+      const parsed = JSON.parse(data)
+      return {
+        freeMinutesPerWeek: parsed.freeMinutesPerWeek ?? DEFAULT_SETTINGS.freeMinutesPerWeek,
+        pricePerMinute: parsed.pricePerMinute ?? DEFAULT_SETTINGS.pricePerMinute,
+      }
+    }
+    return DEFAULT_SETTINGS
+  } catch {
+    return DEFAULT_SETTINGS
+  }
+}
+
+export function saveSettings(settings: AppSettings): void {
+  if (typeof window === 'undefined') return
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+}
+
+export function resetSettings(): void {
+  if (typeof window === 'undefined') return
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(DEFAULT_SETTINGS))
+}
+
+// ===== Families =====
+
 export function getFamilies(): Family[] {
   return loadData()
 }
@@ -53,6 +95,15 @@ export function addFamily(name: string): Family {
   families.unshift(newFamily)
   saveData(families)
   return newFamily
+}
+
+export function updateFamily(id: string, name: string): boolean {
+  const families = loadData()
+  const family = families.find((f) => f.id === id)
+  if (!family) return false
+  family.name = name.trim()
+  saveData(families)
+  return true
 }
 
 export function deleteFamily(id: string): void {

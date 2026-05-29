@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Label } from '@/components/ui/label'
 import {
   Users,
   Plus,
@@ -30,21 +31,26 @@ import {
   Database,
   Download,
   Smartphone,
+  Settings,
+  Pencil,
+  RotateCcw,
+  Save,
 } from 'lucide-react'
 import {
   type Family,
-  type Session,
+  type AppSettings,
   getFamilies,
+  getSettings,
+  saveSettings as storeSaveSettings,
+  resetSettings as storeResetSettings,
   addFamily as storeAddFamily,
+  updateFamily as storeUpdateFamily,
   deleteFamily as storeDeleteFamily,
   startSession as storeStartSession,
   stopSession as storeStopSession,
   resetWeeklyUsage as storeResetWeeklyUsage,
   seedDemoData,
 } from '@/lib/store'
-
-const FREE_MINUTES_PER_WEEK = 12
-const PRICE_PER_MINUTE = 0.5
 
 interface FamilyWithUsage extends Family {
   weeklySeconds: number
@@ -56,8 +62,14 @@ type ViewMode = 'dashboard' | 'log'
 
 export default function Home() {
   const [families, setFamilies] = useState<FamilyWithUsage[]>([])
+  const [settings, setSettings] = useState<AppSettings>({ freeMinutesPerWeek: 12, pricePerMinute: 0.5 })
   const [newFamilyName, setNewFamilyName] = useState('')
   const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
+  const [editFamilyDialogOpen, setEditFamilyDialogOpen] = useState(false)
+  const [editingFamily, setEditingFamily] = useState<{ id: string; name: string } | null>(null)
+  const [editFamilyName, setEditFamilyName] = useState('')
+  const [settingsForm, setSettingsForm] = useState<AppSettings>({ freeMinutesPerWeek: 12, pricePerMinute: 0.5 })
   const [timers, setTimers] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [expandedFamily, setExpandedFamily] = useState<string | null>(null)
@@ -68,6 +80,9 @@ export default function Home() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [showInstallBanner, setShowInstallBanner] = useState(false)
   const timerIntervals = useRef<Record<string, NodeJS.Timeout>>({})
+
+  const freeMin = settings.freeMinutesPerWeek
+  const priceMin = settings.pricePerMinute
 
   // Timer management
   const startTimerInterval = useCallback((familyId: string) => {
@@ -92,12 +107,9 @@ export default function Home() {
       setShowInstallBanner(true)
     }
     window.addEventListener('beforeinstallprompt', handler)
-
-    // Register service worker
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {})
     }
-
     return () => window.removeEventListener('beforeinstallprompt', handler)
   }, [])
 
@@ -105,17 +117,16 @@ export default function Home() {
     if (!installPrompt) return
     installPrompt.prompt()
     const result = await installPrompt.userChoice
-    if (result.outcome === 'accepted') {
-      setShowInstallBanner(false)
-    }
+    if (result.outcome === 'accepted') setShowInstallBanner(false)
     setInstallPrompt(null)
   }
 
   const refreshFamilies = useCallback(() => {
     const data = getFamilies()
+    const currentSettings = getSettings()
+    setSettings(currentSettings)
 
     const familiesWithUsage: FamilyWithUsage[] = data.map((family) => {
-      // Get weekly sessions
       const now = new Date()
       const dayOfWeek = now.getDay()
       const daysSinceSaturday = (dayOfWeek + 1) % 7
@@ -123,11 +134,8 @@ export default function Home() {
       weekStart.setDate(now.getDate() - daysSinceSaturday)
       weekStart.setHours(0, 0, 0, 0)
 
-      const weeklySessions = family.sessions.filter(
-        (s) => new Date(s.startTime) >= weekStart
-      )
+      const weeklySessions = family.sessions.filter((s) => new Date(s.startTime) >= weekStart)
       const weeklySeconds = weeklySessions.reduce((acc, s) => acc + s.duration, 0)
-
       const activeSession = family.sessions.find((s) => !s.endTime)
 
       return {
@@ -140,12 +148,9 @@ export default function Home() {
 
     setFamilies(familiesWithUsage)
 
-    // Initialize timers for active sessions
     familiesWithUsage.forEach((family) => {
       if (family.activeSessionId && family.activeSessionStart) {
-        const elapsed = Math.floor(
-          (Date.now() - new Date(family.activeSessionStart).getTime()) / 1000
-        )
+        const elapsed = Math.floor((Date.now() - new Date(family.activeSessionStart).getTime()) / 1000)
         setTimers((prev) => ({ ...prev, [family.id]: elapsed }))
         startTimerInterval(family.id)
       }
@@ -158,11 +163,10 @@ export default function Home() {
       setLoading(false)
     }
     init()
-    return () => {
-      Object.values(timerIntervals.current).forEach(clearInterval)
-    }
+    return () => { Object.values(timerIntervals.current).forEach(clearInterval) }
   }, [refreshFamilies])
 
+  // Family operations
   const addFamily = () => {
     if (!newFamilyName.trim()) return
     storeAddFamily(newFamilyName.trim())
@@ -175,6 +179,20 @@ export default function Home() {
     storeDeleteFamily(id)
     stopTimerInterval(id)
     setTimers((prev) => { const n = { ...prev }; delete n[id]; return n })
+    refreshFamilies()
+  }
+
+  const openEditFamily = (family: FamilyWithUsage) => {
+    setEditingFamily({ id: family.id, name: family.name })
+    setEditFamilyName(family.name)
+    setEditFamilyDialogOpen(true)
+  }
+
+  const saveEditFamily = () => {
+    if (!editingFamily || !editFamilyName.trim()) return
+    storeUpdateFamily(editingFamily.id, editFamilyName.trim())
+    setEditFamilyDialogOpen(false)
+    setEditingFamily(null)
     refreshFamilies()
   }
 
@@ -211,6 +229,26 @@ export default function Home() {
     setSeeding(false)
   }
 
+  // Settings operations
+  const openSettings = () => {
+    setSettingsForm({ ...settings })
+    setSettingsDialogOpen(true)
+  }
+
+  const saveSettingsForm = () => {
+    if (settingsForm.freeMinutesPerWeek <= 0 || settingsForm.pricePerMinute < 0) return
+    storeSaveSettings(settingsForm)
+    setSettingsDialogOpen(false)
+    refreshFamilies()
+  }
+
+  const handleResetSettings = () => {
+    storeResetSettings()
+    setSettingsForm({ freeMinutesPerWeek: 12, pricePerMinute: 0.5 })
+    refreshFamilies()
+  }
+
+  // Formatting helpers
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
@@ -218,7 +256,6 @@ export default function Home() {
     if (hours > 0) return `${hours.toString().padStart(2, '0')}:${(mins % 60).toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
   }
-
   const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
   const formatDateTime = (dateStr: string) => new Date(dateStr).toLocaleDateString('ar-EG', { month: 'short', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit' })
   const formatTimeOfDay = (dateStr: string) => new Date(dateStr).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
@@ -226,18 +263,18 @@ export default function Home() {
   const calculateCost = (family: FamilyWithUsage) => {
     const totalSeconds = family.weeklySeconds + (timers[family.id] || 0)
     const totalMinutes = totalSeconds / 60
-    const freeMinutes = Math.min(totalMinutes, FREE_MINUTES_PER_WEEK)
-    const paidMinutes = Math.max(0, totalMinutes - FREE_MINUTES_PER_WEEK)
-    const cost = paidMinutes * PRICE_PER_MINUTE
-    return { totalMinutes, freeMinutes, paidMinutes, cost }
+    const freeMinutesVal = Math.min(totalMinutes, freeMin)
+    const paidMinutesVal = Math.max(0, totalMinutes - freeMin)
+    const cost = paidMinutesVal * priceMin
+    return { totalMinutes, freeMinutes: freeMinutesVal, paidMinutes: paidMinutesVal, cost }
   }
 
   const getUsagePercentage = (family: FamilyWithUsage) => {
     const totalSeconds = family.weeklySeconds + (timers[family.id] || 0)
-    return Math.min((totalSeconds / 60 / FREE_MINUTES_PER_WEEK) * 100, 100)
+    return Math.min((totalSeconds / 60 / freeMin) * 100, 100)
   }
 
-  const isOverFreeLimit = (family: FamilyWithUsage) => (family.weeklySeconds + (timers[family.id] || 0)) / 60 > FREE_MINUTES_PER_WEEK
+  const isOverFreeLimit = (family: FamilyWithUsage) => (family.weeklySeconds + (timers[family.id] || 0)) / 60 > freeMin
 
   const activeFamilyCount = families.filter((f) => f.activeSessionId).length
   const totalRevenue = families.reduce((acc, f) => acc + calculateCost(f).cost, 0)
@@ -254,13 +291,8 @@ export default function Home() {
             <span className="text-sm font-medium">ثبّت التطبيق على هاتفك</span>
           </div>
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="secondary" onClick={handleInstall} className="gap-1">
-              <Smartphone className="w-3 h-3" />
-              تثبيت
-            </Button>
-            <Button size="sm" variant="ghost" className="text-white hover:bg-white/20" onClick={() => setShowInstallBanner(false)}>
-              ✕
-            </Button>
+            <Button size="sm" variant="secondary" onClick={handleInstall} className="gap-1"><Smartphone className="w-3 h-3" />تثبيت</Button>
+            <Button size="sm" variant="ghost" className="text-white hover:bg-white/20" onClick={() => setShowInstallBanner(false)}>✕</Button>
           </div>
         </div>
       )}
@@ -284,6 +316,11 @@ export default function Home() {
                 {activeFamilyCount} نشط
               </Badge>
             )}
+            {/* Settings Button */}
+            <Button variant="outline" size="sm" onClick={openSettings} className="gap-1.5 text-xs border-gray-200 text-gray-600 hover:text-cyan-700 hover:bg-cyan-50 hover:border-cyan-200">
+              <Settings className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">الإعدادات</span>
+            </Button>
             <Button
               variant={currentView === 'log' ? 'default' : 'outline'}
               size="sm"
@@ -315,7 +352,7 @@ export default function Home() {
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700">اسم العائلة</label>
+                    <Label>اسم العائلة</Label>
                     <Input placeholder="أدخل اسم العائلة..." value={newFamilyName} onChange={(e) => setNewFamilyName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addFamily()} className="text-right" />
                   </div>
                 </div>
@@ -329,6 +366,106 @@ export default function Home() {
         </div>
       </header>
 
+      {/* ====== SETTINGS DIALOG ====== */}
+      <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
+        <DialogContent className="sm:max-w-md" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-right">
+              <Settings className="w-5 h-5 text-cyan-600" />
+              إعدادات التطبيق
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-5 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="free-minutes" className="text-sm font-medium text-gray-700">
+                الدقائق المجانية الأسبوعية
+              </Label>
+              <Input
+                id="free-minutes"
+                type="number"
+                min="1"
+                step="1"
+                value={settingsForm.freeMinutesPerWeek}
+                onChange={(e) => setSettingsForm((prev) => ({ ...prev, freeMinutesPerWeek: Number(e.target.value) || 0 }))}
+                className="text-center text-lg font-bold"
+              />
+              <p className="text-[10px] text-gray-400">عدد الدقائق المجانية لكل عائلة أسبوعياً</p>
+            </div>
+            <Separator />
+            <div className="space-y-2">
+              <Label htmlFor="price-minute" className="text-sm font-medium text-gray-700">
+                سعر الدقيقة الإضافية (شيكل)
+              </Label>
+              <Input
+                id="price-minute"
+                type="number"
+                min="0"
+                step="0.1"
+                value={settingsForm.pricePerMinute}
+                onChange={(e) => setSettingsForm((prev) => ({ ...prev, pricePerMinute: Number(e.target.value) || 0 }))}
+                className="text-center text-lg font-bold"
+              />
+              <p className="text-[10px] text-gray-400">سعر كل دقيقة بعد تجاوز الحد المجاني</p>
+            </div>
+
+            {/* Preview */}
+            <div className="bg-gradient-to-r from-cyan-50 to-emerald-50 border border-cyan-200 rounded-xl p-3">
+              <p className="text-xs font-semibold text-cyan-800 mb-1.5">معاينة الإعدادات:</p>
+              <div className="flex justify-between text-xs text-gray-600">
+                <span>الحد المجاني:</span>
+                <span className="font-bold text-emerald-700">{settingsForm.freeMinutesPerWeek} دقيقة/أسبوع</span>
+              </div>
+              <div className="flex justify-between text-xs text-gray-600 mt-1">
+                <span>سعر الإضافي:</span>
+                <span className="font-bold text-amber-700">{settingsForm.pricePerMinute} شيكل/دقيقة</span>
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" onClick={handleResetSettings} className="gap-1.5 text-amber-600 hover:text-amber-700">
+              <RotateCcw className="w-3.5 h-3.5" />
+              استعادة الافتراضي
+            </Button>
+            <DialogClose asChild><Button variant="outline">إلغاء</Button></DialogClose>
+            <Button onClick={saveSettingsForm} disabled={settingsForm.freeMinutesPerWeek <= 0 || settingsForm.pricePerMinute < 0} className="gap-1.5 bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-700 hover:to-emerald-700 text-white">
+              <Save className="w-3.5 h-3.5" />
+              حفظ
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ====== EDIT FAMILY DIALOG ====== */}
+      <Dialog open={editFamilyDialogOpen} onOpenChange={setEditFamilyDialogOpen}>
+        <DialogContent className="sm:max-w-md" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-right">
+              <Pencil className="w-5 h-5 text-cyan-600" />
+              تعديل بيانات العائلة
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>اسم العائلة</Label>
+              <Input
+                placeholder="أدخل الاسم الجديد..."
+                value={editFamilyName}
+                onChange={(e) => setEditFamilyName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && saveEditFamily()}
+                className="text-right"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <DialogClose asChild><Button variant="outline">إلغاء</Button></DialogClose>
+            <Button onClick={saveEditFamily} disabled={!editFamilyName.trim()} className="gap-1.5 bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-700 hover:to-emerald-700 text-white">
+              <Save className="w-3.5 h-3.5" />
+              حفظ التعديل
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* DASHBOARD VIEW */}
       {currentView === 'dashboard' && (
         <>
@@ -339,8 +476,8 @@ export default function Home() {
                   <Clock className="w-4 h-4 text-cyan-700" />
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-cyan-800">مجاني: {FREE_MINUTES_PER_WEEK} دقيقة/أسبوع</p>
-                  <p className="text-[10px] text-cyan-600">إضافي: {PRICE_PER_MINUTE} شيكل/دقيقة</p>
+                  <p className="text-xs font-semibold text-cyan-800">مجاني: {freeMin} دقيقة/أسبوع</p>
+                  <p className="text-[10px] text-cyan-600">إضافي: {priceMin} شيكل/دقيقة</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 text-xs">
@@ -371,7 +508,7 @@ export default function Home() {
                   const { paidMinutes, cost } = calculateCost(family)
                   const usagePercent = getUsagePercentage(family)
                   const overLimit = isOverFreeLimit(family)
-                  const freeRemaining = Math.max(0, FREE_MINUTES_PER_WEEK - totalUsedMinutes)
+                  const freeRemaining = Math.max(0, freeMin - totalUsedMinutes)
 
                   return (
                     <Card key={family.id} className={`overflow-hidden transition-all duration-300 border-2 ${isActive ? 'border-emerald-400 shadow-lg shadow-emerald-100 ring-1 ring-emerald-200' : overLimit ? 'border-amber-300 shadow-md shadow-amber-50' : 'border-gray-200 hover:border-cyan-300 hover:shadow-md hover:shadow-cyan-50'}`}>
@@ -402,7 +539,7 @@ export default function Home() {
                           <div className="flex justify-between text-[10px]">
                             <span className="text-gray-500">الاستخدام المجاني</span>
                             <span className={`font-medium ${overLimit ? 'text-amber-600' : 'text-gray-700'}`}>
-                              {Math.min(totalUsedMinutes, FREE_MINUTES_PER_WEEK).toFixed(1)}/{FREE_MINUTES_PER_WEEK} د
+                              {Math.min(totalUsedMinutes, freeMin).toFixed(1)}/{freeMin} د
                             </span>
                           </div>
                           <Progress value={usagePercent} className={`h-2 ${overLimit ? '[&>div]:bg-amber-500' : '[&>div]:bg-gradient-to-r [&>div]:from-cyan-500 [&>div]:to-emerald-500'}`} />
@@ -425,7 +562,7 @@ export default function Home() {
                           <div className="bg-amber-50 rounded-lg p-2 border border-amber-200 text-center">
                             <p className="text-[10px] text-amber-700">
                               <AlertCircle className="w-2.5 h-2.5 inline ml-0.5" />
-                              إضافي: <span className="font-bold">{paidMinutes.toFixed(1)}</span> د × {PRICE_PER_MINUTE} شيكل
+                              إضافي: <span className="font-bold">{paidMinutes.toFixed(1)}</span> د × {priceMin} شيكل
                             </p>
                           </div>
                         )}
@@ -442,6 +579,9 @@ export default function Home() {
                               <Play className="w-3.5 h-3.5" />تشغيل
                             </Button>
                           )}
+                          <Button variant="outline" size="icon" onClick={() => openEditFamily(family)} className="border-gray-200 text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50 h-8 w-8" title="تعديل الاسم">
+                            <Pencil className="w-3.5 h-3.5" />
+                          </Button>
                           <Button variant="outline" size="icon" onClick={() => setExpandedFamily(expandedFamily === family.id ? null : family.id)} className="border-gray-200 h-8 w-8">
                             {expandedFamily === family.id ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                           </Button>
@@ -548,7 +688,7 @@ export default function Home() {
 
           <div className="space-y-3 mb-4">
             {families.filter((f) => !selectedLogFamily || f.id === selectedLogFamily).filter((f) => !logSearch || f.name.includes(logSearch)).map((family) => {
-              const { totalMinutes, freeMinutes, paidMinutes, cost } = calculateCost(family)
+              const { totalMinutes, freeMinutes: freeMinutesVal, paidMinutes: paidMinutesVal, cost } = calculateCost(family)
               const familySessions = family.sessions?.filter((s) => s.endTime) || []
               const overLimit = isOverFreeLimit(family)
               const isActive = !!family.activeSessionId
@@ -570,6 +710,9 @@ export default function Home() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => openEditFamily(family)} className="h-6 w-6 text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50" title="تعديل">
+                          <Pencil className="w-3 h-3" />
+                        </Button>
                         {isActive && <Badge className="bg-emerald-500 text-white text-[9px] gap-0.5"><span className="w-1 h-1 rounded-full bg-white animate-pulse"></span>قيد التعبئة</Badge>}
                         {overLimit ? <Badge variant="destructive" className="text-[9px]">تجاوز</Badge> : <Badge className="bg-emerald-100 text-emerald-700 text-[9px] hover:bg-emerald-100">ضمن الحد</Badge>}
                       </div>
@@ -577,34 +720,17 @@ export default function Home() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                      <div className="bg-cyan-50 rounded-lg p-2 text-center border border-cyan-100">
-                        <p className="text-[9px] text-cyan-600">إجمالي</p>
-                        <p className="text-sm font-bold text-cyan-700">{totalMinutes.toFixed(1)}</p>
-                      </div>
-                      <div className="bg-emerald-50 rounded-lg p-2 text-center border border-emerald-100">
-                        <p className="text-[9px] text-emerald-600">المجاني</p>
-                        <p className="text-sm font-bold text-emerald-700">{freeMinutes.toFixed(1)}</p>
-                      </div>
-                      <div className="bg-amber-50 rounded-lg p-2 text-center border border-amber-100">
-                        <p className="text-[9px] text-amber-600">المدفوع</p>
-                        <p className="text-sm font-bold text-amber-700">{paidMinutes.toFixed(1)}</p>
-                      </div>
-                      <div className="bg-rose-50 rounded-lg p-2 text-center border border-rose-100">
-                        <p className="text-[9px] text-rose-600">المبلغ</p>
-                        <p className="text-sm font-bold text-rose-700">{cost.toFixed(2)}</p>
-                      </div>
-                      <div className="bg-gray-50 rounded-lg p-2 text-center border border-gray-200">
-                        <p className="text-[9px] text-gray-500">الجلسات</p>
-                        <p className="text-sm font-bold text-gray-700">{familySessions.length}</p>
-                      </div>
+                      <div className="bg-cyan-50 rounded-lg p-2 text-center border border-cyan-100"><p className="text-[9px] text-cyan-600">إجمالي</p><p className="text-sm font-bold text-cyan-700">{totalMinutes.toFixed(1)}</p></div>
+                      <div className="bg-emerald-50 rounded-lg p-2 text-center border border-emerald-100"><p className="text-[9px] text-emerald-600">المجاني</p><p className="text-sm font-bold text-emerald-700">{freeMinutesVal.toFixed(1)}</p></div>
+                      <div className="bg-amber-50 rounded-lg p-2 text-center border border-amber-100"><p className="text-[9px] text-amber-600">المدفوع</p><p className="text-sm font-bold text-amber-700">{paidMinutesVal.toFixed(1)}</p></div>
+                      <div className="bg-rose-50 rounded-lg p-2 text-center border border-rose-100"><p className="text-[9px] text-rose-600">المبلغ</p><p className="text-sm font-bold text-rose-700">{cost.toFixed(2)}</p></div>
+                      <div className="bg-gray-50 rounded-lg p-2 text-center border border-gray-200"><p className="text-[9px] text-gray-500">الجلسات</p><p className="text-sm font-bold text-gray-700">{familySessions.length}</p></div>
                     </div>
 
                     <div className="space-y-1">
                       <div className="flex justify-between text-[10px]">
                         <span className="text-gray-500">استخدام الحد المجاني</span>
-                        <span className={`font-medium ${overLimit ? 'text-amber-600' : 'text-gray-700'}`}>
-                          {Math.min(totalMinutes, FREE_MINUTES_PER_WEEK).toFixed(1)}/{FREE_MINUTES_PER_WEEK} د
-                        </span>
+                        <span className={`font-medium ${overLimit ? 'text-amber-600' : 'text-gray-700'}`}>{Math.min(totalMinutes, freeMin).toFixed(1)}/{freeMin} د</span>
                       </div>
                       <Progress value={getUsagePercentage(family)} className={`h-2 ${overLimit ? '[&>div]:bg-amber-500' : '[&>div]:bg-gradient-to-r [&>div]:from-cyan-500 [&>div]:to-emerald-500'}`} />
                     </div>
@@ -631,9 +757,9 @@ export default function Home() {
                                 {familySessions.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()).map((session, idx) => {
                                   const sessionMinutes = session.duration / 60
                                   const sessionsBefore = familySessions.filter((s) => new Date(s.startTime).getTime() > new Date(session.startTime).getTime()).reduce((acc, s) => acc + s.duration / 60, 0)
-                                  const freeRemainingBefore = Math.max(0, FREE_MINUTES_PER_WEEK - Math.min(sessionsBefore, FREE_MINUTES_PER_WEEK))
+                                  const freeRemainingBefore = Math.max(0, freeMin - Math.min(sessionsBefore, freeMin))
                                   const paidInSession = Math.max(0, sessionMinutes - freeRemainingBefore)
-                                  const sessionCost = paidInSession * PRICE_PER_MINUTE
+                                  const sessionCost = paidInSession * priceMin
 
                                   return (
                                     <tr key={session.id} className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50">
@@ -672,7 +798,6 @@ export default function Home() {
   )
 }
 
-// Type for beforeinstallprompt event
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
