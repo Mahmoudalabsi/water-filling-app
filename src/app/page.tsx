@@ -159,6 +159,11 @@ export default function Home() {
 
   useEffect(() => {
     const init = () => {
+      // Auto-seed demo data if no families exist
+      const existingFamilies = getFamilies()
+      if (existingFamilies.length === 0) {
+        seedDemoData()
+      }
       refreshFamilies()
       setLoading(false)
     }
