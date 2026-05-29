@@ -29,7 +29,6 @@ import {
   Search,
   CalendarDays,
   Coins,
-
   Download,
   Smartphone,
   Settings,
@@ -37,6 +36,9 @@ import {
   RotateCcw,
   Save,
   Zap,
+  X,
+  AlertTriangle,
+  Info,
 } from 'lucide-react'
 import {
   type Family,
@@ -52,7 +54,6 @@ import {
   stopSession as storeStopSession,
   resetWeeklyUsage as storeResetWeeklyUsage,
   resetAllWeeklyUsage as storeResetAllWeeklyUsage,
-
 } from '@/lib/store'
 
 interface FamilyWithUsage extends Family {
@@ -62,6 +63,27 @@ interface FamilyWithUsage extends Family {
 }
 
 type ViewMode = 'dashboard' | 'log'
+
+// Toast types
+type ToastType = 'success' | 'error' | 'warning' | 'info'
+
+interface Toast {
+  id: string
+  type: ToastType
+  message: string
+  duration?: number
+}
+
+// Confirm dialog state
+interface ConfirmState {
+  open: boolean
+  title: string
+  message: string
+  confirmLabel: string
+  cancelLabel: string
+  variant: 'danger' | 'warning' | 'info'
+  onConfirm: () => void
+}
 
 export default function Home() {
   const [families, setFamilies] = useState<FamilyWithUsage[]>([])
@@ -82,6 +104,49 @@ export default function Home() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [showInstallBanner, setShowInstallBanner] = useState(false)
   const timerIntervals = useRef<Record<string, NodeJS.Timeout>>({})
+
+  // Toast system
+  const [toasts, setToasts] = useState<Toast[]>([])
+  const toastTimers = useRef<Record<string, NodeJS.Timeout>>({})
+
+  // Confirm dialog
+  const [confirmState, setConfirmState] = useState<ConfirmState>({
+    open: false, title: '', message: '', confirmLabel: 'تأكيد', cancelLabel: 'إلغاء', variant: 'danger', onConfirm: () => {}
+  })
+
+  const showToast = useCallback((type: ToastType, message: string, duration = 3000) => {
+    const id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5)
+    setToasts((prev) => [...prev, { id, type, message, duration }])
+    if (duration > 0) {
+      toastTimers.current[id] = setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id))
+        delete toastTimers.current[id]
+      }, duration)
+    }
+  }, [])
+
+  const removeToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id))
+    if (toastTimers.current[id]) {
+      clearTimeout(toastTimers.current[id])
+      delete toastTimers.current[id]
+    }
+  }, [])
+
+  const showConfirm = useCallback((title: string, message: string, onConfirm: () => void, variant: 'danger' | 'warning' | 'info' = 'danger') => {
+    setConfirmState({
+      open: true,
+      title,
+      message,
+      confirmLabel: variant === 'danger' ? 'حذف' : variant === 'warning' ? 'تأكيد' : 'موافق',
+      cancelLabel: 'إلغاء',
+      variant,
+      onConfirm: () => {
+        setConfirmState((prev) => ({ ...prev, open: false }))
+        onConfirm()
+      },
+    })
+  }, [])
 
   const freeMin = settings.freeMinutesPerWeek
   const priceMin = settings.pricePerMinute
@@ -134,40 +199,47 @@ export default function Home() {
     if (!installPrompt) return
     installPrompt.prompt()
     const result = await installPrompt.userChoice
-    if (result.outcome === 'accepted') setShowInstallBanner(false)
+    if (result.outcome === 'accepted') {
+      setShowInstallBanner(false)
+      showToast('success', 'تم تثبيت التطبيق بنجاح!')
+    }
     setInstallPrompt(null)
   }
 
   const refreshFamilies = useCallback(() => {
-    const data = getFamilies()
-    const currentSettings = getSettings()
-    setSettings(currentSettings)
+    try {
+      const data = getFamilies()
+      const currentSettings = getSettings()
+      setSettings(currentSettings)
 
-    const familiesWithUsage: FamilyWithUsage[] = data.map((family) => {
-      const weekStart = getWeekStart(currentSettings.resetDay ?? 6)
+      const familiesWithUsage: FamilyWithUsage[] = data.map((family) => {
+        const weekStart = getWeekStart(currentSettings.resetDay ?? 6)
 
-      const weeklySessions = family.sessions.filter((s) => new Date(s.startTime) >= weekStart)
-      const weeklySeconds = weeklySessions.reduce((acc, s) => acc + s.duration, 0)
-      const activeSession = family.sessions.find((s) => !s.endTime)
+        const weeklySessions = (family.sessions || []).filter((s) => new Date(s.startTime) >= weekStart)
+        const weeklySeconds = weeklySessions.reduce((acc, s) => acc + (s.duration || 0), 0)
+        const activeSession = (family.sessions || []).find((s) => !s.endTime)
 
-      return {
-        ...family,
-        weeklySeconds,
-        activeSessionId: activeSession?.id || null,
-        activeSessionStart: activeSession?.startTime || null,
-      }
-    })
+        return {
+          ...family,
+          weeklySeconds,
+          activeSessionId: activeSession?.id || null,
+          activeSessionStart: activeSession?.startTime || null,
+        }
+      })
 
-    setFamilies(familiesWithUsage)
+      setFamilies(familiesWithUsage)
 
-    familiesWithUsage.forEach((family) => {
-      if (family.activeSessionId && family.activeSessionStart) {
-        const elapsed = Math.floor((Date.now() - new Date(family.activeSessionStart).getTime()) / 1000)
-        setTimers((prev) => ({ ...prev, [family.id]: elapsed }))
-        startTimerInterval(family.id)
-      }
-    })
-  }, [startTimerInterval])
+      familiesWithUsage.forEach((family) => {
+        if (family.activeSessionId && family.activeSessionStart) {
+          const elapsed = Math.floor((Date.now() - new Date(family.activeSessionStart).getTime()) / 1000)
+          setTimers((prev) => ({ ...prev, [family.id]: elapsed }))
+          startTimerInterval(family.id)
+        }
+      })
+    } catch {
+      showToast('error', 'حدث خطأ في تحميل البيانات')
+    }
+  }, [startTimerInterval, showToast])
 
   useEffect(() => {
     const init = () => {
@@ -185,13 +257,22 @@ export default function Home() {
     setNewFamilyName('')
     setAddDialogOpen(false)
     refreshFamilies()
+    showToast('success', `تمت إضافة عائلة "${newFamilyName.trim()}" بنجاح`)
   }
 
-  const deleteFamily = (id: string) => {
-    storeDeleteFamily(id)
-    stopTimerInterval(id)
-    setTimers((prev) => { const n = { ...prev }; delete n[id]; return n })
-    refreshFamilies()
+  const deleteFamily = (id: string, name: string) => {
+    showConfirm(
+      'حذف العائلة',
+      `هل أنت متأكد من حذف عائلة "${name}"؟ سيتم حذف جميع بياناتها وجلساتها.`,
+      () => {
+        storeDeleteFamily(id)
+        stopTimerInterval(id)
+        setTimers((prev) => { const n = { ...prev }; delete n[id]; return n })
+        refreshFamilies()
+        showToast('success', `تم حذف عائلة "${name}"`)
+      },
+      'danger'
+    )
   }
 
   const openEditFamily = (family: FamilyWithUsage) => {
@@ -206,6 +287,7 @@ export default function Home() {
     setEditFamilyDialogOpen(false)
     setEditingFamily(null)
     refreshFamilies()
+    showToast('success', 'تم تعديل اسم العائلة بنجاح')
   }
 
   const handleStartSession = (familyId: string) => {
@@ -214,8 +296,9 @@ export default function Home() {
       setTimers((prev) => ({ ...prev, [familyId]: 0 }))
       startTimerInterval(familyId)
       refreshFamilies()
+      showToast('info', 'تم بدء جلسة التعبئة', 2000)
     } else {
-      alert(result.error || 'حدث خطأ')
+      showToast('error', result.error || 'حدث خطأ في بدء الجلسة')
     }
   }
 
@@ -224,29 +307,43 @@ export default function Home() {
     storeStopSession(familyId, sessionId, elapsed)
     stopTimerInterval(familyId)
     refreshFamilies()
+    const mins = (elapsed / 60).toFixed(1)
+    showToast('success', `تم إيقاف الجلسة - المدة: ${mins} دقيقة`)
   }
 
-  const resetWeekly = (familyId: string) => {
-    if (!confirm('هل أنت متأكد من إعادة تعيين الاستخدام الأسبوعي؟')) return
-    storeResetWeeklyUsage(familyId)
-    stopTimerInterval(familyId)
-    setTimers((prev) => { const n = { ...prev }; delete n[familyId]; return n })
-    refreshFamilies()
+  const resetWeekly = (familyId: string, familyName: string) => {
+    showConfirm(
+      'إعادة تعيين الاستخدام',
+      `هل أنت متأكد من إعادة تعيين الاستخدام الأسبوعي لعائلة "${familyName}"؟`,
+      () => {
+        storeResetWeeklyUsage(familyId)
+        stopTimerInterval(familyId)
+        setTimers((prev) => { const n = { ...prev }; delete n[familyId]; return n })
+        refreshFamilies()
+        showToast('success', `تم إعادة تعيين الاستخدام لعائلة "${familyName}"`)
+      },
+      'warning'
+    )
   }
 
   const resetAllCounters = () => {
-    if (!confirm('هل أنت متأكد من تصفير جميع العدادات؟ سيتم حذف جميع الجلسات لجميع العائلات.')) return
-    // Stop all active timers
-    families.forEach((family) => {
-      if (family.activeSessionId) {
-        stopTimerInterval(family.id)
-      }
-    })
-    setTimers({})
-    storeResetAllWeeklyUsage()
-    refreshFamilies()
+    showConfirm(
+      'تصفير جميع العدادات',
+      'هل أنت متأكد من تصفير جميع العدادات؟ سيتم حذف جميع الجلسات لجميع العائلات.',
+      () => {
+        families.forEach((family) => {
+          if (family.activeSessionId) {
+            stopTimerInterval(family.id)
+          }
+        })
+        setTimers({})
+        storeResetAllWeeklyUsage()
+        refreshFamilies()
+        showToast('success', 'تم تصفير جميع العدادات بنجاح')
+      },
+      'warning'
+    )
   }
-
 
   // Settings operations
   const openSettings = () => {
@@ -259,51 +356,54 @@ export default function Home() {
     storeSaveSettings(settingsForm)
     setSettingsDialogOpen(false)
     refreshFamilies()
+    showToast('success', 'تم حفظ الإعدادات بنجاح')
   }
 
   const handleResetSettings = () => {
     storeResetSettings()
     setSettingsForm({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, resetDay: 6, lastAutoReset: null })
     refreshFamilies()
+    showToast('info', 'تم استعادة الإعدادات الافتراضية')
   }
 
-  // Toggle auto-reset and update settings immediately
+  // Toggle auto-reset (only from settings)
   const toggleAutoReset = (checked: boolean) => {
     const updated = { ...settings, autoResetWeekly: checked }
     storeSaveSettings(updated)
     setSettings(updated)
+    showToast('info', checked ? `تم تفعيل التصفير التلقائي كل ${resetDayName}` : 'تم تعطيل التصفير التلقائي - استخدم زر التصفير', 3000)
   }
 
   // Auto-reset check: run on load and periodically
   useEffect(() => {
     const checkAutoReset = () => {
-      const currentSettings = getSettings()
-      if (!currentSettings.autoResetWeekly) return
+      try {
+        const currentSettings = getSettings()
+        if (!currentSettings.autoResetWeekly) return
 
-      const weekStart = getWeekStart(currentSettings.resetDay ?? 6)
-      const lastReset = currentSettings.lastAutoReset ? new Date(currentSettings.lastAutoReset) : null
+        const weekStart = getWeekStart(currentSettings.resetDay ?? 6)
+        const lastReset = currentSettings.lastAutoReset ? new Date(currentSettings.lastAutoReset) : null
 
-      // If no reset has happened yet, or last reset was before this week's start
-      if (!lastReset || lastReset < weekStart) {
-        // Auto-reset all counters
-        storeResetAllWeeklyUsage()
-        // Update lastAutoReset to now
-        const newSettings = { ...currentSettings, lastAutoReset: new Date().toISOString() }
-        storeSaveSettings(newSettings)
-        setSettings(newSettings)
-        setTimers({})
-        // Stop all timer intervals
-        Object.values(timerIntervals.current).forEach(clearInterval)
-        timerIntervals.current = {}
-        refreshFamilies()
+        if (!lastReset || lastReset < weekStart) {
+          storeResetAllWeeklyUsage()
+          const newSettings = { ...currentSettings, lastAutoReset: new Date().toISOString() }
+          storeSaveSettings(newSettings)
+          setSettings(newSettings)
+          setTimers({})
+          Object.values(timerIntervals.current).forEach(clearInterval)
+          timerIntervals.current = {}
+          refreshFamilies()
+          showToast('success', 'تم التصفير التلقائي الأسبوعي', 4000)
+        }
+      } catch {
+        // Silently handle auto-reset errors
       }
     }
 
     checkAutoReset()
-    // Check every minute
     const interval = setInterval(checkAutoReset, 60000)
     return () => clearInterval(interval)
-  }, [refreshFamilies])
+  }, [refreshFamilies, showToast, resetDayName])
 
   // Formatting helpers
   const formatTime = (seconds: number): string => {
@@ -338,8 +438,71 @@ export default function Home() {
   const totalFamiliesOverLimit = families.filter((f) => isOverFreeLimit(f)).length
   const totalMinutesUsed = families.reduce((acc, f) => acc + f.weeklySeconds / 60, 0)
 
+  // Toast icon and style mapping
+  const toastConfig: Record<ToastType, { icon: typeof CheckCircle2; bg: string; border: string; iconColor: string; textColor: string }> = {
+    success: { icon: CheckCircle2, bg: 'bg-emerald-50', border: 'border-emerald-200', iconColor: 'text-emerald-600', textColor: 'text-emerald-800' },
+    error: { icon: AlertCircle, bg: 'bg-red-50', border: 'border-red-200', iconColor: 'text-red-600', textColor: 'text-red-800' },
+    warning: { icon: AlertTriangle, bg: 'bg-amber-50', border: 'border-amber-200', iconColor: 'text-amber-600', textColor: 'text-amber-800' },
+    info: { icon: Info, bg: 'bg-cyan-50', border: 'border-cyan-200', iconColor: 'text-cyan-600', textColor: 'text-cyan-800' },
+  }
+
   return (
     <div dir="rtl" className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-emerald-50">
+      {/* ====== TOAST NOTIFICATIONS ====== */}
+      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-2 w-[90%] max-w-md">
+        {toasts.map((toast) => {
+          const config = toastConfig[toast.type]
+          const IconComp = config.icon
+          return (
+            <div
+              key={toast.id}
+              className={`${config.bg} ${config.border} border rounded-xl px-4 py-3 shadow-lg flex items-center gap-3 animate-in slide-in-from-top-4 fade-in duration-300`}
+            >
+              <IconComp className={`w-5 h-5 ${config.iconColor} flex-shrink-0`} />
+              <span className={`text-sm font-medium ${config.textColor} flex-1`}>{toast.message}</span>
+              <button onClick={() => removeToast(toast.id)} className={`${config.iconColor} hover:opacity-70 transition-opacity flex-shrink-0`}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* ====== CONFIRM DIALOG ====== */}
+      <Dialog open={confirmState.open} onOpenChange={(open) => { if (!open) setConfirmState((prev) => ({ ...prev, open: false })) }}>
+        <DialogContent className="sm:max-w-md" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-right">
+              {confirmState.variant === 'danger' && <AlertCircle className="w-5 h-5 text-red-600" />}
+              {confirmState.variant === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-600" />}
+              {confirmState.variant === 'info' && <Info className="w-5 h-5 text-cyan-600" />}
+              {confirmState.title}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600 py-2">{confirmState.message}</p>
+          <DialogFooter className="gap-2">
+            <DialogClose asChild>
+              <Button variant="outline">{confirmState.cancelLabel}</Button>
+            </DialogClose>
+            <Button
+              onClick={confirmState.onConfirm}
+              className={
+                confirmState.variant === 'danger'
+                  ? 'bg-red-600 hover:bg-red-700 text-white gap-1.5'
+                  : confirmState.variant === 'warning'
+                  ? 'bg-amber-600 hover:bg-amber-700 text-white gap-1.5'
+                  : 'bg-cyan-600 hover:bg-cyan-700 text-white gap-1.5'
+              }
+            >
+              {confirmState.variant === 'danger' && <Trash2 className="w-3.5 h-3.5" />}
+              {confirmState.variant === 'warning' && <CheckCircle2 className="w-3.5 h-3.5" />}
+              {confirmState.variant === 'info' && <CheckCircle2 className="w-3.5 h-3.5" />}
+              {confirmState.confirmLabel}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* PWA Install Banner */}
       {showInstallBanner && (
         <div className="bg-gradient-to-r from-cyan-600 to-emerald-600 text-white p-3 flex items-center justify-between gap-3 sticky top-0 z-[60]">
@@ -373,25 +536,19 @@ export default function Home() {
                 {activeFamilyCount} نشط
               </Badge>
             )}
-            {/* Auto Reset Switch / Manual Reset Button */}
-            <div className="flex items-center gap-1.5 bg-white/80 rounded-lg border border-gray-200 px-2 py-1">
-              {settings.autoResetWeekly ? (
-                <div className="flex items-center gap-1.5">
-                  <Zap className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="text-[10px] font-semibold text-emerald-700">تلقائي</span>
-                  <span className="text-[9px] text-emerald-600 bg-emerald-50 rounded px-1 py-0.5 border border-emerald-200">{resetDayName}</span>
-                  <Switch checked={true} onCheckedChange={toggleAutoReset} className="scale-75 data-[state=checked]:bg-emerald-500" />
-                </div>
-              ) : (
-                <div className="flex items-center gap-1">
-                  <Button variant="outline" size="sm" onClick={resetAllCounters} className="gap-1 text-xs border-red-300 text-red-700 hover:text-red-800 hover:bg-red-50 hover:border-red-400 bg-red-50/50 font-semibold h-7 px-2" title="تصفير جميع العدادات">
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>تصفير</span>
-                  </Button>
-                  <Switch checked={false} onCheckedChange={toggleAutoReset} className="scale-75 data-[state=unchecked]:bg-gray-300" />
-                </div>
-              )}
-            </div>
+            {/* Reset status indicator - no switch, just status + optional reset button */}
+            {settings.autoResetWeekly ? (
+              <div className="flex items-center gap-1.5 bg-emerald-50/80 rounded-lg border border-emerald-200 px-2 py-1">
+                <Zap className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="text-[10px] font-semibold text-emerald-700">تلقائي</span>
+                <span className="text-[9px] text-emerald-600 bg-emerald-100 rounded px-1 py-0.5 border border-emerald-300">{resetDayName}</span>
+              </div>
+            ) : (
+              <Button variant="outline" size="sm" onClick={resetAllCounters} className="gap-1 text-xs border-red-300 text-red-700 hover:text-red-800 hover:bg-red-50 hover:border-red-400 bg-red-50/50 font-semibold h-7 px-2" title="تصفير جميع العدادات">
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>تصفير</span>
+              </Button>
+            )}
             {/* Settings Button */}
             <Button variant="outline" size="sm" onClick={openSettings} className="gap-1.5 text-xs border-cyan-300 text-cyan-700 hover:text-cyan-800 hover:bg-cyan-50 hover:border-cyan-400 bg-cyan-50/50 font-semibold">
               <Settings className="w-4 h-4" />
@@ -706,10 +863,10 @@ export default function Home() {
                           <Button variant="outline" size="icon" onClick={() => setExpandedFamily(expandedFamily === family.id ? null : family.id)} className="border-gray-200 h-8 w-8">
                             {expandedFamily === family.id ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                           </Button>
-                          <Button variant="outline" size="icon" onClick={() => resetWeekly(family.id)} className="border-gray-200 text-amber-600 hover:text-amber-700 hover:bg-amber-50 h-8 w-8" title="إعادة تعيين">
+                          <Button variant="outline" size="icon" onClick={() => resetWeekly(family.id, family.name)} className="border-gray-200 text-amber-600 hover:text-amber-700 hover:bg-amber-50 h-8 w-8" title="إعادة تعيين">
                             <RefreshCw className="w-3.5 h-3.5" />
                           </Button>
-                          <Button variant="outline" size="icon" onClick={() => { if (confirm(`هل أنت متأكد من حذف عائلة "${family.name}"؟`)) deleteFamily(family.id) }} className="border-gray-200 text-red-500 hover:text-red-600 hover:bg-red-50 h-8 w-8">
+                          <Button variant="outline" size="icon" onClick={() => deleteFamily(family.id, family.name)} className="border-gray-200 text-red-500 hover:text-red-600 hover:bg-red-50 h-8 w-8">
                             <Trash2 className="w-3.5 h-3.5" />
                           </Button>
                         </div>

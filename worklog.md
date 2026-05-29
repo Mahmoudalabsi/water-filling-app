@@ -1,89 +1,59 @@
-# Worklog - نظام حساب تعبئة المياه
-
 ---
 Task ID: 1
-Agent: Main Agent
-Task: تهيئة بيئة المشروع
+Agent: main
+Task: Fix crash by making store.ts more robust for old localStorage data
 
 Work Log:
-- تم تشغيل سكريبت التهيئة init-fullstack
-- تم التأكد من جاهزية بيئة Next.js 16 مع TypeScript و Tailwind CSS
+- Added validateFamily() function that validates and sanitizes family objects from localStorage
+- Made loadData() validate all families and clean corrupted data, auto-saving cleaned version
+- Made getSettings() more defensive with type checking for each field
+- Added proper error handling with localStorage.removeItem() for corrupted data
+- Removed seedDemoData() function that was no longer needed
 
 Stage Summary:
-- بيئة المشروع جاهزة بالكامل
+- store.ts is now resilient to any shape of localStorage data
+- Corrupted or incompatible data is automatically cleaned up
+- App won't crash even with malformed localStorage entries
 
 ---
 Task ID: 2
-Agent: Main Agent
-Task: بناء واجهة لوحة التحكم مع إضافة العائلات وعداد الوقت
+Agent: main
+Task: Remove Switch from main screen header, replace with status badge
 
 Work Log:
-- تم تحديث Prisma schema بنماذج Family و Session
-- تم إنشاء API routes للعائلات والجلسات
-- تم بناء الصفحة الرئيسية كلوحة تحكم كاملة مع:
-  - إضافة/حذف عائلات
-  - عداد وقت تفاعلي لكل عائلة
-  - شريط تقدم للاستخدام المجاني
-  - تفاصيل الاستخدام الموسعة
-  - تصميم RTL عربي كامل
+- Removed Switch component from the header auto-reset section
+- When auto-reset is on: shows emerald badge with Zap icon, "تلقائي" text, and reset day name
+- When auto-reset is off: shows red "تصفير" button only (no switch)
+- Auto-reset toggle is now only accessible through the Settings dialog
 
 Stage Summary:
-- التطبيق يعمل بنجاح على المنفذ 3000
-- API endpoints: /api/families, /api/sessions
-- قاعدة بيانات SQLite مع Prisma ORM
+- Header no longer has a Switch component
+- Clean status indicator replaces the switch
+- Toggle functionality moved entirely to Settings dialog
 
 ---
-Task ID: 3
-Agent: Main Agent
-Task: تنفيذ منطق الحساب
+Task ID: 3-4
+Agent: main
+Task: Add toast notifications and replace alert/confirm with styled dialogs
 
 Work Log:
-- تم تنفيذ حساب 12 دقيقة مجانية أسبوعياً
-- تم تنفيذ سعر 0.5 شيكل للدقيقة الإضافية
-- تم حساب المبلغ المستحق تلقائياً
-- تم عرض الدقائق المتبقية مجاناً
-- تم تنفيذ إعادة تعيين الاستخدام الأسبوعي
+- Created Toast notification system with 4 types: success, error, warning, info
+- Toasts appear at top-center with animated slide-in, auto-dismiss after 3s
+- Each toast type has distinct colors matching the app's design (emerald, red, amber, cyan)
+- Created custom Confirm Dialog replacing browser confirm()
+- Confirm dialog has 3 variants: danger (red), warning (amber), info (cyan)
+- Replaced all alert() calls with showToast('error', ...)
+- Replaced all confirm() calls with showConfirm() custom dialog
+- Added toast messages for all user actions:
+  - Adding family, deleting family, editing family
+  - Starting/stopping sessions
+  - Resetting weekly usage, resetting all counters
+  - Saving settings, resetting settings
+  - Auto-reset notifications
+  - PWA installation
 
 Stage Summary:
-- منطق الحساب مكتمل ويعمل بشكل صحيح
-
----
-Task ID: 4
-Agent: Main Agent
-Task: إنشاء بيانات تجريبية وصفحة سجل التعبئة
-
-Work Log:
-- تم إنشاء API route /api/seed لإضافة بيانات تجريبية (6 عائلات + 16 جلسة)
-- تم إضافة زر "بيانات تجريبية" في الهيدر يظهر عند عدم وجود بيانات
-- تم بناء صفحة سجل التعبئة الكاملة تتضمن:
-  - بطاقات إحصائية (عدد العائلات، إجمالي الدقائق، المبلغ، التجاوزات)
-  - شريط بحث وتصفية حسب العائلة
-  - كرت تفصيلي لكل عائلة مع جدول الجلسات والتكلفة
-  - جدول شامل لجميع الجلسات
-- تم إصلاح مشكلة import أيقونة Coin -> Coins في lucide-react
-
-Stage Summary:
-- البيانات التجريبية تعمل بنجاح
-- صفحة سجل التعبئة متاحة عبر زر "سجل التعبئة" في الهيدر
-- التطبيق يعمل بالكامل على المنفذ 3000
-
----
-Task ID: 5
-Agent: Main Agent
-Task: تحويل التطبيق ليعمل على الهاتف كـ PWA/APK
-
-Work Log:
-- تم تحويل التطبيق بالكامل من server-side (API + Prisma) إلى client-side (localStorage)
-- تم إنشاء /src/lib/store.ts لإدارة البيانات باستخدام localStorage
-- تم إضافة ملف manifest.json لدعم PWA
-- تم إضافة service worker (sw.js) لدعم العمل بدون إنترنت
-- تم إنشاء أيقونات التطبيق (192px + 512px)
-- تم إضافة شريط تثبيت التطبيق على الهاتف
-- تم تحسين التصميم ليناسب شاشات الهاتف (أحجام أصغر، أزرار مدمجة)
-- تم تسجيل service worker تلقائياً عند فتح التطبيق
-- تم التحقق من عمل جميع ملفات PWA (manifest, sw, icons)
-
-Stage Summary:
-- التطبيق يعمل بالكامل بدون سيرفر (localStorage)
-- يمكن تثبيته كتطبيق PWA على أي هاتف Android
-- لإنشاء ملف APK حقيقي يمكن استخدام أداة مثل PWABuilder أو Bubblewrap
+- No more browser alert() or confirm() dialogs
+- All feedback uses styled, app-consistent toasts and dialogs
+- Toast notifications with auto-dismiss and manual close
+- Custom confirmation dialogs with appropriate styling per action type

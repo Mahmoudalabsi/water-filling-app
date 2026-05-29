@@ -40,19 +40,75 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 9)
 }
 
+// Validate and fix a family object to ensure it has all required fields
+function validateFamily(family: any): Family | null {
+  try {
+    if (!family || typeof family !== 'object') return null
+    if (!family.id || typeof family.id !== 'string') return null
+    if (!family.name || typeof family.name !== 'string') return null
+    if (!family.createdAt || typeof family.createdAt !== 'string') return null
+
+    // Ensure sessions array exists and is valid
+    const sessions: Session[] = Array.isArray(family.sessions)
+      ? family.sessions.filter((s: any) => {
+          try {
+            return s && typeof s === 'object' && s.id && s.familyId && s.startTime && typeof s.duration === 'number'
+          } catch {
+            return false
+          }
+        }).map((s: any) => ({
+          id: String(s.id),
+          familyId: String(s.familyId),
+          startTime: String(s.startTime),
+          endTime: s.endTime ? String(s.endTime) : null,
+          duration: Number(s.duration) || 0,
+          createdAt: s.createdAt ? String(s.createdAt) : String(s.startTime),
+        }))
+      : []
+
+    return {
+      id: String(family.id),
+      name: String(family.name),
+      createdAt: String(family.createdAt),
+      sessions,
+    }
+  } catch {
+    return null
+  }
+}
+
 function loadData(): Family[] {
   if (typeof window === 'undefined') return []
   try {
     const data = localStorage.getItem(STORAGE_KEY)
-    return data ? JSON.parse(data) : []
+    if (!data) return []
+    const parsed = JSON.parse(data)
+    if (!Array.isArray(parsed)) {
+      // Data is corrupted, clear it
+      localStorage.removeItem(STORAGE_KEY)
+      return []
+    }
+    // Validate each family and filter out invalid ones
+    const validated = parsed.map(validateFamily).filter((f: Family | null): f is Family => f !== null)
+    // If validation changed the data, save the cleaned version
+    if (validated.length !== parsed.length || JSON.stringify(validated) !== JSON.stringify(parsed)) {
+      saveData(validated)
+    }
+    return validated
   } catch {
+    // Corrupted data, clear it
+    try { localStorage.removeItem(STORAGE_KEY) } catch {}
     return []
   }
 }
 
 function saveData(families: Family[]): void {
   if (typeof window === 'undefined') return
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(families))
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(families))
+  } catch {
+    // Storage full or other error
+  }
 }
 
 // ===== Settings =====
@@ -63,28 +119,34 @@ export function getSettings(): AppSettings {
     const data = localStorage.getItem(SETTINGS_KEY)
     if (data) {
       const parsed = JSON.parse(data)
+      if (!parsed || typeof parsed !== 'object') return DEFAULT_SETTINGS
       return {
-        freeMinutesPerWeek: parsed.freeMinutesPerWeek ?? DEFAULT_SETTINGS.freeMinutesPerWeek,
-        pricePerMinute: parsed.pricePerMinute ?? DEFAULT_SETTINGS.pricePerMinute,
-        autoResetWeekly: parsed.autoResetWeekly ?? DEFAULT_SETTINGS.autoResetWeekly,
-        resetDay: parsed.resetDay ?? DEFAULT_SETTINGS.resetDay,
-        lastAutoReset: parsed.lastAutoReset ?? DEFAULT_SETTINGS.lastAutoReset,
+        freeMinutesPerWeek: typeof parsed.freeMinutesPerWeek === 'number' ? parsed.freeMinutesPerWeek : DEFAULT_SETTINGS.freeMinutesPerWeek,
+        pricePerMinute: typeof parsed.pricePerMinute === 'number' ? parsed.pricePerMinute : DEFAULT_SETTINGS.pricePerMinute,
+        autoResetWeekly: typeof parsed.autoResetWeekly === 'boolean' ? parsed.autoResetWeekly : DEFAULT_SETTINGS.autoResetWeekly,
+        resetDay: typeof parsed.resetDay === 'number' && parsed.resetDay >= 0 && parsed.resetDay <= 6 ? parsed.resetDay : DEFAULT_SETTINGS.resetDay,
+        lastAutoReset: typeof parsed.lastAutoReset === 'string' ? parsed.lastAutoReset : DEFAULT_SETTINGS.lastAutoReset,
       }
     }
     return DEFAULT_SETTINGS
   } catch {
+    try { localStorage.removeItem(SETTINGS_KEY) } catch {}
     return DEFAULT_SETTINGS
   }
 }
 
 export function saveSettings(settings: AppSettings): void {
   if (typeof window === 'undefined') return
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+  } catch {}
 }
 
 export function resetSettings(): void {
   if (typeof window === 'undefined') return
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(DEFAULT_SETTINGS))
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(DEFAULT_SETTINGS))
+  } catch {}
 }
 
 // ===== Families =====
@@ -169,86 +231,5 @@ export function resetAllWeeklyUsage(): void {
   families.forEach((family) => {
     family.sessions = []
   })
-  saveData(families)
-}
-
-export function seedDemoData(): void {
-  const now = new Date()
-
-  const daysAgo = (days: number, hour = 10, minute = 0) => {
-    const d = new Date(now)
-    d.setDate(d.getDate() - days)
-    d.setHours(hour, minute, 0, 0)
-    return d.toISOString()
-  }
-
-  const families: Family[] = [
-    {
-      id: generateId(),
-      name: 'عائلة الأغا',
-      createdAt: daysAgo(20),
-      sessions: [
-        { id: generateId(), familyId: '', startTime: daysAgo(1, 8, 30), endTime: daysAgo(1, 8, 35), duration: 300, createdAt: daysAgo(1, 8, 30) },
-        { id: generateId(), familyId: '', startTime: daysAgo(3, 14, 0), endTime: daysAgo(3, 14, 7), duration: 420, createdAt: daysAgo(3, 14, 0) },
-      ],
-    },
-    {
-      id: generateId(),
-      name: 'عائلة الشريف',
-      createdAt: daysAgo(15),
-      sessions: [
-        { id: generateId(), familyId: '', startTime: daysAgo(0, 9, 0), endTime: daysAgo(0, 9, 6), duration: 360, createdAt: daysAgo(0, 9, 0) },
-        { id: generateId(), familyId: '', startTime: daysAgo(2, 11, 15), endTime: daysAgo(2, 11, 21), duration: 360, createdAt: daysAgo(2, 11, 15) },
-        { id: generateId(), familyId: '', startTime: daysAgo(4, 16, 0), endTime: daysAgo(4, 16, 4), duration: 240, createdAt: daysAgo(4, 16, 0) },
-      ],
-    },
-    {
-      id: generateId(),
-      name: 'عائلة الحسيني',
-      createdAt: daysAgo(30),
-      sessions: [
-        { id: generateId(), familyId: '', startTime: daysAgo(1, 7, 0), endTime: daysAgo(1, 7, 10), duration: 600, createdAt: daysAgo(1, 7, 0) },
-        { id: generateId(), familyId: '', startTime: daysAgo(5, 13, 30), endTime: daysAgo(5, 13, 32), duration: 120, createdAt: daysAgo(5, 13, 30) },
-      ],
-    },
-    {
-      id: generateId(),
-      name: 'عائلة النابلسي',
-      createdAt: daysAgo(25),
-      sessions: [
-        { id: generateId(), familyId: '', startTime: daysAgo(0, 6, 0), endTime: daysAgo(0, 6, 8), duration: 480, createdAt: daysAgo(0, 6, 0) },
-        { id: generateId(), familyId: '', startTime: daysAgo(1, 10, 0), endTime: daysAgo(1, 10, 17), duration: 420, createdAt: daysAgo(1, 10, 0) },
-        { id: generateId(), familyId: '', startTime: daysAgo(3, 15, 0), endTime: daysAgo(3, 15, 17), duration: 600, createdAt: daysAgo(3, 15, 0) },
-        { id: generateId(), familyId: '', startTime: daysAgo(9, 8, 0), endTime: daysAgo(9, 8, 15), duration: 900, createdAt: daysAgo(9, 8, 0) },
-        { id: generateId(), familyId: '', startTime: daysAgo(10, 12, 0), endTime: daysAgo(10, 12, 22), duration: 1200, createdAt: daysAgo(10, 12, 0) },
-      ],
-    },
-    {
-      id: generateId(),
-      name: 'عائلة القاسم',
-      createdAt: daysAgo(10),
-      sessions: [
-        { id: generateId(), familyId: '', startTime: daysAgo(2, 9, 0), endTime: daysAgo(2, 9, 3), duration: 180, createdAt: daysAgo(2, 9, 0) },
-      ],
-    },
-    {
-      id: generateId(),
-      name: 'عائلة المصري',
-      createdAt: daysAgo(12),
-      sessions: [
-        { id: generateId(), familyId: '', startTime: daysAgo(1, 11, 0), endTime: daysAgo(1, 11, 6), duration: 360, createdAt: daysAgo(1, 11, 0) },
-        { id: generateId(), familyId: '', startTime: daysAgo(4, 14, 30), endTime: daysAgo(4, 14, 34), duration: 240, createdAt: daysAgo(4, 14, 30) },
-        { id: generateId(), familyId: '', startTime: daysAgo(8, 10, 0), endTime: daysAgo(8, 10, 18), duration: 1080, createdAt: daysAgo(8, 10, 0) },
-      ],
-    },
-  ]
-
-  // Fix familyId references
-  families.forEach((f) => {
-    f.sessions.forEach((s) => {
-      s.familyId = f.id
-    })
-  })
-
   saveData(families)
 }
