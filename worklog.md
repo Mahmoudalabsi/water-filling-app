@@ -87,3 +87,25 @@ Stage Summary:
 - Key alias: water-filling, passwords: water123
 - App ID: com.waterfilling.app
 - Min SDK: 24 (Android 7.0+), Target SDK: 35 (Android 15)
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Make APK app portrait/mobile-only mode
+
+Work Log:
+- Added android:screenOrientation="portrait" to AndroidManifest.xml activity
+- Set orientation: "portrait-primary" in manifest.json (PWA)
+- Added screen-orientation meta tags in layout.tsx head
+- Changed max-w-6xl to max-w-lg throughout page.tsx for mobile-width layout
+- Changed grid-cols-1 md:grid-cols-2 lg:grid-cols-3 to grid-cols-1 (single column, phone layout)
+- Changed grid-cols-2 md:grid-cols-4 to grid-cols-2 in stats section
+- Changed grid-cols-2 md:grid-cols-5 to grid-cols-2 in log detail section
+- Added viewport-fit: "cover" in viewport config
+- Rebuilt static export, synced with Capacitor, rebuilt release APK
+
+Stage Summary:
+- Release APK: /home/z/my-project/download/water-filling-app-release.apk (3.4MB)
+- Debug APK: /home/z/my-project/download/water-filling-app.apk (4.4MB)
+- App is now locked to portrait orientation on Android
+- UI is optimized for phone screens (single column, max-w-lg width)

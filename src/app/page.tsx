@@ -519,7 +519,7 @@ export default function Home() {
 
       {/* Header */}
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-cyan-100 shadow-sm">
-        <div className="max-w-6xl mx-auto px-3 py-3 flex items-center justify-between">
+        <div className="max-w-lg mx-auto px-3 py-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center shadow-lg shadow-cyan-200">
               <Droplets className="w-5 h-5 text-white" />
@@ -746,7 +746,7 @@ export default function Home() {
       {/* DASHBOARD VIEW */}
       {currentView === 'dashboard' && (
         <>
-          <div className="max-w-6xl mx-auto px-3 mt-3">
+          <div className="max-w-lg mx-auto px-3 mt-3">
             <div className="bg-gradient-to-r from-cyan-50 to-emerald-50 border border-cyan-200 rounded-xl p-3 flex flex-wrap items-center gap-3 justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-cyan-100 flex items-center justify-center">
@@ -764,7 +764,7 @@ export default function Home() {
             </div>
           </div>
 
-          <main className="max-w-6xl mx-auto px-3 py-4">
+          <main className="max-w-lg mx-auto px-3 py-3">
             {loading ? (
               <div className="flex flex-col items-center justify-center py-20 gap-4">
                 <div className="w-12 h-12 rounded-full border-4 border-cyan-200 border-t-cyan-600 animate-spin"></div>
@@ -777,7 +777,7 @@ export default function Home() {
                 <p className="text-gray-500 text-sm">اضغط على &quot;إضافة&quot; لبدء الاستخدام</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 gap-3">
                 {families.map((family) => {
                   const isActive = !!family.activeSessionId
                   const timerSeconds = timers[family.id] || 0
@@ -908,15 +908,15 @@ export default function Home() {
             )}
           </main>
           <footer className="mt-6 pb-4">
-            <div className="max-w-6xl mx-auto px-3 text-center text-[10px] text-gray-400">نظام حساب تعبئة المياه</div>
+            <div className="max-w-lg mx-auto px-3 text-center text-[10px] text-gray-400">نظام حساب تعبئة المياه</div>
           </footer>
         </>
       )}
 
       {/* LOG VIEW */}
       {currentView === 'log' && (
-        <main className="max-w-6xl mx-auto px-3 py-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+        <main className="max-w-lg mx-auto px-3 py-3">
+          <div className="grid grid-cols-2 gap-2 mb-4">
             <Card className="border-cyan-200 bg-gradient-to-br from-cyan-50 to-white">
               <CardContent className="p-3 text-center">
                 <Users className="w-5 h-5 text-cyan-600 mx-auto mb-0.5" />
@@ -998,7 +998,7 @@ export default function Home() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                    <div className="grid grid-cols-2 gap-2">
                       <div className="bg-cyan-50 rounded-lg p-2 text-center border border-cyan-100"><p className="text-[9px] text-cyan-600">إجمالي</p><p className="text-sm font-bold text-cyan-700">{totalMinutes.toFixed(1)}</p></div>
                       <div className="bg-emerald-50 rounded-lg p-2 text-center border border-emerald-100"><p className="text-[9px] text-emerald-600">المجاني</p><p className="text-sm font-bold text-emerald-700">{freeMinutesVal.toFixed(1)}</p></div>
                       <div className="bg-amber-50 rounded-lg p-2 text-center border border-amber-100"><p className="text-[9px] text-amber-600">المدفوع</p><p className="text-sm font-bold text-amber-700">{paidMinutesVal.toFixed(1)}</p></div>

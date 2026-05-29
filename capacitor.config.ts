@@ -15,6 +15,9 @@ const config: CapacitorConfig = {
       showSpinner: true,
       spinnerColor: '#ffffff',
     }
+  },
+  android: {
+    allowMixedContent: false,
   }
 };
 
