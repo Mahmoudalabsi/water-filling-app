@@ -29,7 +29,7 @@ import {
   Search,
   CalendarDays,
   Coins,
-  Database,
+
   Download,
   Smartphone,
   Settings,
@@ -52,7 +52,7 @@ import {
   stopSession as storeStopSession,
   resetWeeklyUsage as storeResetWeeklyUsage,
   resetAllWeeklyUsage as storeResetAllWeeklyUsage,
-  seedDemoData,
+
 } from '@/lib/store'
 
 interface FamilyWithUsage extends Family {
@@ -79,7 +79,6 @@ export default function Home() {
   const [currentView, setCurrentView] = useState<ViewMode>('dashboard')
   const [logSearch, setLogSearch] = useState('')
   const [selectedLogFamily, setSelectedLogFamily] = useState<string | null>(null)
-  const [seeding, setSeeding] = useState(false)
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [showInstallBanner, setShowInstallBanner] = useState(false)
   const timerIntervals = useRef<Record<string, NodeJS.Timeout>>({})
@@ -253,12 +252,6 @@ export default function Home() {
     refreshFamilies()
   }
 
-  const seedData = () => {
-    setSeeding(true)
-    seedDemoData()
-    refreshFamilies()
-    setSeeding(false)
-  }
 
   // Settings operations
   const openSettings = () => {
@@ -629,7 +622,7 @@ export default function Home() {
               <div className="flex flex-col items-center justify-center py-20 gap-4">
                 <div className="w-20 h-20 rounded-full bg-cyan-50 flex items-center justify-center"><Users className="w-10 h-10 text-cyan-300" /></div>
                 <h2 className="text-lg font-semibold text-gray-700">لا توجد عائلات بعد</h2>
-                <p className="text-gray-500 text-sm">اضغط على &quot;إضافة&quot; أو &quot;تجريبي&quot; لبدء الاستخدام</p>
+                <p className="text-gray-500 text-sm">اضغط على &quot;إضافة&quot; لبدء الاستخدام</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
