@@ -317,18 +317,18 @@ export default function Home() {
               </Badge>
             )}
             {/* Settings Button */}
-            <Button variant="outline" size="sm" onClick={openSettings} className="gap-1.5 text-xs border-gray-200 text-gray-600 hover:text-cyan-700 hover:bg-cyan-50 hover:border-cyan-200">
-              <Settings className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">الإعدادات</span>
+            <Button variant="outline" size="sm" onClick={openSettings} className="gap-1.5 text-xs border-cyan-300 text-cyan-700 hover:text-cyan-800 hover:bg-cyan-50 hover:border-cyan-400 bg-cyan-50/50 font-semibold">
+              <Settings className="w-4 h-4" />
+              <span>الإعدادات</span>
             </Button>
             <Button
               variant={currentView === 'log' ? 'default' : 'outline'}
               size="sm"
-              className={`gap-1.5 text-xs ${currentView === 'log' ? 'bg-gradient-to-r from-cyan-600 to-emerald-600 text-white' : 'border-cyan-200 text-cyan-700 hover:bg-cyan-50'}`}
+              className={`gap-1.5 text-xs ${currentView === 'log' ? 'bg-gradient-to-r from-cyan-600 to-emerald-600 text-white border-transparent' : 'border-cyan-200 text-cyan-700 hover:bg-cyan-50'}`}
               onClick={() => setCurrentView(currentView === 'log' ? 'dashboard' : 'log')}
             >
               <History className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">السجل</span>
+              <span>السجل</span>
             </Button>
             {families.length === 0 && (
               <Button onClick={seedData} disabled={seeding} size="sm" className="gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs">
@@ -340,7 +340,7 @@ export default function Home() {
               <DialogTrigger asChild>
                 <Button size="sm" className="gap-1.5 bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-700 hover:to-emerald-700 text-white shadow-md text-xs">
                   <Plus className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">إضافة</span>
+                  <span>إضافة</span>
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-md" dir="rtl">
@@ -579,8 +579,9 @@ export default function Home() {
                               <Play className="w-3.5 h-3.5" />تشغيل
                             </Button>
                           )}
-                          <Button variant="outline" size="icon" onClick={() => openEditFamily(family)} className="border-gray-200 text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50 h-8 w-8" title="تعديل الاسم">
-                            <Pencil className="w-3.5 h-3.5" />
+                          <Button variant="outline" size="sm" onClick={() => openEditFamily(family)} className="gap-1 border-cyan-300 text-cyan-700 hover:text-cyan-800 hover:bg-cyan-50 hover:border-cyan-400 bg-cyan-50/50 font-semibold h-8 text-[10px]">
+                            <Pencil className="w-3 h-3" />
+                            <span>تعديل</span>
                           </Button>
                           <Button variant="outline" size="icon" onClick={() => setExpandedFamily(expandedFamily === family.id ? null : family.id)} className="border-gray-200 h-8 w-8">
                             {expandedFamily === family.id ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
@@ -710,8 +711,9 @@ export default function Home() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => openEditFamily(family)} className="h-6 w-6 text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50" title="تعديل">
+                        <Button variant="outline" size="sm" onClick={() => openEditFamily(family)} className="gap-1 border-cyan-300 text-cyan-700 hover:text-cyan-800 hover:bg-cyan-50 hover:border-cyan-400 bg-cyan-50/50 font-semibold h-7 text-[10px]">
                           <Pencil className="w-3 h-3" />
+                          <span>تعديل</span>
                         </Button>
                         {isActive && <Badge className="bg-emerald-500 text-white text-[9px] gap-0.5"><span className="w-1 h-1 rounded-full bg-white animate-pulse"></span>قيد التعبئة</Badge>}
                         {overLimit ? <Badge variant="destructive" className="text-[9px]">تجاوز</Badge> : <Badge className="bg-emerald-100 text-emerald-700 text-[9px] hover:bg-emerald-100">ضمن الحد</Badge>}
