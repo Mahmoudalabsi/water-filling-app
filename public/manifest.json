@@ -1,0 +1,28 @@
+{
+  "name": "نظام حساب تعبئة المياه",
+  "short_name": "تعبئة المياه",
+  "description": "تطبيق إدارة وحساب تعبئة المياه للعائلات - 12 دقيقة مجاناً أسبوعياً",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0891b2",
+  "dir": "rtl",
+  "lang": "ar",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "864x1152",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["utilities", "business"],
+  "prefer_related_applications": false
+}

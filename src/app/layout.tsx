@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
@@ -13,11 +13,26 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: "#0891b2",
+}
+
 export const metadata: Metadata = {
   title: "نظام حساب تعبئة المياه",
-  description: "تطبيق لإدارة وحساب تعبئة المياه للعائلات - 12 دقيقة مجاناً أسبوعياً وسعر الدقيقة الإضافية 0.5 شيكل",
+  description: "تطبيق إدارة وحساب تعبئة المياه للعائلات - 12 دقيقة مجاناً أسبوعياً وسعر الدقيقة الإضافية 0.5 شيكل",
+  manifest: "/manifest.json",
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/icon-192.png",
+    apple: "/icon-512.png",
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "تعبئة المياه",
   },
 };
 
@@ -28,6 +43,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ar" dir="rtl" suppressHydrationWarning>
+      <head>
+        <link rel="apple-touch-icon" href="/icon-512.png" />
+        <meta name="mobile-web-app-capable" content="yes" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
