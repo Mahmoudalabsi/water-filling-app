@@ -418,12 +418,6 @@ export default function Home() {
               <History className="w-3.5 h-3.5" />
               <span>السجل</span>
             </Button>
-            {families.length === 0 && (
-              <Button onClick={seedData} disabled={seeding} size="sm" className="gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs">
-                {seeding ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Database className="w-3.5 h-3.5" />}
-                <span className="hidden sm:inline">تجريبي</span>
-              </Button>
-            )}
             <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
               <DialogTrigger asChild>
                 <Button size="sm" className="gap-1.5 bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-700 hover:to-emerald-700 text-white shadow-md text-xs">
