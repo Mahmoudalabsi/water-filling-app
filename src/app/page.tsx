@@ -88,7 +88,7 @@ export default function Home() {
 
   // Arabic day names for selector
   const dayNames = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
-  const resetDayName = dayNames[settings.resetDay] || 'السبت'
+  const resetDayName = dayNames[settings.resetDay ?? 6] || 'السبت'
 
   // Calculate week start based on the selected reset day
   const getWeekStart = (resetDay: number): Date => {
@@ -144,7 +144,7 @@ export default function Home() {
     setSettings(currentSettings)
 
     const familiesWithUsage: FamilyWithUsage[] = data.map((family) => {
-      const weekStart = getWeekStart(currentSettings.resetDay)
+      const weekStart = getWeekStart(currentSettings.resetDay ?? 6)
 
       const weeklySessions = family.sessions.filter((s) => new Date(s.startTime) >= weekStart)
       const weeklySeconds = weeklySessions.reduce((acc, s) => acc + s.duration, 0)
@@ -280,7 +280,7 @@ export default function Home() {
       const currentSettings = getSettings()
       if (!currentSettings.autoResetWeekly) return
 
-      const weekStart = getWeekStart(currentSettings.resetDay)
+      const weekStart = getWeekStart(currentSettings.resetDay ?? 6)
       const lastReset = currentSettings.lastAutoReset ? new Date(currentSettings.lastAutoReset) : null
 
       // If no reset has happened yet, or last reset was before this week's start
@@ -518,7 +518,7 @@ export default function Home() {
                     </button>
                   ))}
                 </div>
-                <p className="text-[10px] text-gray-400">يتم تصفير العدادات تلقائياً كل يوم {dayNames[settingsForm.resetDay]}</p>
+                <p className="text-[10px] text-gray-400">يتم تصفير العدادات تلقائياً كل يوم {dayNames[settingsForm.resetDay ?? 6]}</p>
               </div>
             )}
 
@@ -536,7 +536,7 @@ export default function Home() {
               <div className="flex justify-between text-xs text-gray-600 mt-1">
                 <span>التصفير:</span>
                 <span className={`font-bold ${settingsForm.autoResetWeekly ? 'text-emerald-700' : 'text-amber-700'}`}>
-                  {settingsForm.autoResetWeekly ? `تلقائي كل ${dayNames[settingsForm.resetDay]}` : 'يدوي بالزر'}
+                  {settingsForm.autoResetWeekly ? `تلقائي كل ${dayNames[settingsForm.resetDay ?? 6]}` : 'يدوي بالزر'}
                 </span>
               </div>
             </div>
