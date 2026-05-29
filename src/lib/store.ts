@@ -20,6 +20,8 @@ export interface Family {
 export interface AppSettings {
   freeMinutesPerWeek: number
   pricePerMinute: number
+  autoResetWeekly: boolean
+  lastAutoReset: string | null // ISO date of last auto-reset
 }
 
 const STORAGE_KEY = 'water-filling-app'
@@ -28,6 +30,8 @@ const SETTINGS_KEY = 'water-filling-settings'
 const DEFAULT_SETTINGS: AppSettings = {
   freeMinutesPerWeek: 12,
   pricePerMinute: 0.5,
+  autoResetWeekly: true,
+  lastAutoReset: null,
 }
 
 function generateId(): string {
@@ -60,6 +64,8 @@ export function getSettings(): AppSettings {
       return {
         freeMinutesPerWeek: parsed.freeMinutesPerWeek ?? DEFAULT_SETTINGS.freeMinutesPerWeek,
         pricePerMinute: parsed.pricePerMinute ?? DEFAULT_SETTINGS.pricePerMinute,
+        autoResetWeekly: parsed.autoResetWeekly ?? DEFAULT_SETTINGS.autoResetWeekly,
+        lastAutoReset: parsed.lastAutoReset ?? DEFAULT_SETTINGS.lastAutoReset,
       }
     }
     return DEFAULT_SETTINGS
@@ -152,6 +158,14 @@ export function resetWeeklyUsage(familyId: string): void {
   if (!family) return
 
   family.sessions = []
+  saveData(families)
+}
+
+export function resetAllWeeklyUsage(): void {
+  const families = loadData()
+  families.forEach((family) => {
+    family.sessions = []
+  })
   saveData(families)
 }
 

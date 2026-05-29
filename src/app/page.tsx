@@ -10,6 +10,7 @@ import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import {
   Users,
   Plus,
@@ -35,6 +36,7 @@ import {
   Pencil,
   RotateCcw,
   Save,
+  Zap,
 } from 'lucide-react'
 import {
   type Family,
@@ -49,6 +51,7 @@ import {
   startSession as storeStartSession,
   stopSession as storeStopSession,
   resetWeeklyUsage as storeResetWeeklyUsage,
+  resetAllWeeklyUsage as storeResetAllWeeklyUsage,
   seedDemoData,
 } from '@/lib/store'
 
@@ -62,14 +65,14 @@ type ViewMode = 'dashboard' | 'log'
 
 export default function Home() {
   const [families, setFamilies] = useState<FamilyWithUsage[]>([])
-  const [settings, setSettings] = useState<AppSettings>({ freeMinutesPerWeek: 12, pricePerMinute: 0.5 })
+  const [settings, setSettings] = useState<AppSettings>({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, lastAutoReset: null })
   const [newFamilyName, setNewFamilyName] = useState('')
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const [editFamilyDialogOpen, setEditFamilyDialogOpen] = useState(false)
   const [editingFamily, setEditingFamily] = useState<{ id: string; name: string } | null>(null)
   const [editFamilyName, setEditFamilyName] = useState('')
-  const [settingsForm, setSettingsForm] = useState<AppSettings>({ freeMinutesPerWeek: 12, pricePerMinute: 0.5 })
+  const [settingsForm, setSettingsForm] = useState<AppSettings>({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, lastAutoReset: null })
   const [timers, setTimers] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [expandedFamily, setExpandedFamily] = useState<string | null>(null)
@@ -227,6 +230,19 @@ export default function Home() {
     refreshFamilies()
   }
 
+  const resetAllCounters = () => {
+    if (!confirm('هل أنت متأكد من تصفير جميع العدادات؟ سيتم حذف جميع الجلسات لجميع العائلات.')) return
+    // Stop all active timers
+    families.forEach((family) => {
+      if (family.activeSessionId) {
+        stopTimerInterval(family.id)
+      }
+    })
+    setTimers({})
+    storeResetAllWeeklyUsage()
+    refreshFamilies()
+  }
+
   const seedData = () => {
     setSeeding(true)
     seedDemoData()
@@ -249,9 +265,53 @@ export default function Home() {
 
   const handleResetSettings = () => {
     storeResetSettings()
-    setSettingsForm({ freeMinutesPerWeek: 12, pricePerMinute: 0.5 })
+    setSettingsForm({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, lastAutoReset: null })
     refreshFamilies()
   }
+
+  // Toggle auto-reset and update settings immediately
+  const toggleAutoReset = (checked: boolean) => {
+    const updated = { ...settings, autoResetWeekly: checked }
+    storeSaveSettings(updated)
+    setSettings(updated)
+  }
+
+  // Auto-reset check: run on load and periodically
+  useEffect(() => {
+    const checkAutoReset = () => {
+      const currentSettings = getSettings()
+      if (!currentSettings.autoResetWeekly) return
+
+      const now = new Date()
+      const dayOfWeek = now.getDay()
+      const daysSinceSaturday = (dayOfWeek + 1) % 7
+      const weekStart = new Date(now)
+      weekStart.setDate(now.getDate() - daysSinceSaturday)
+      weekStart.setHours(0, 0, 0, 0)
+
+      const lastReset = currentSettings.lastAutoReset ? new Date(currentSettings.lastAutoReset) : null
+
+      // If no reset has happened yet, or last reset was before this week's start
+      if (!lastReset || lastReset < weekStart) {
+        // Auto-reset all counters
+        storeResetAllWeeklyUsage()
+        // Update lastAutoReset to now
+        const newSettings = { ...currentSettings, lastAutoReset: now.toISOString() }
+        storeSaveSettings(newSettings)
+        setSettings(newSettings)
+        setTimers({})
+        // Stop all timer intervals
+        Object.values(timerIntervals.current).forEach(clearInterval)
+        timerIntervals.current = {}
+        refreshFamilies()
+      }
+    }
+
+    checkAutoReset()
+    // Check every minute
+    const interval = setInterval(checkAutoReset, 60000)
+    return () => clearInterval(interval)
+  }, [refreshFamilies])
 
   // Formatting helpers
   const formatTime = (seconds: number): string => {
@@ -321,6 +381,24 @@ export default function Home() {
                 {activeFamilyCount} نشط
               </Badge>
             )}
+            {/* Auto Reset Switch / Manual Reset Button */}
+            <div className="flex items-center gap-1.5 bg-white/80 rounded-lg border border-gray-200 px-2 py-1">
+              {settings.autoResetWeekly ? (
+                <div className="flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="text-[10px] font-semibold text-emerald-700">تلقائي</span>
+                  <Switch checked={true} onCheckedChange={toggleAutoReset} className="scale-75 data-[state=checked]:bg-emerald-500" />
+                </div>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <Button variant="outline" size="sm" onClick={resetAllCounters} className="gap-1 text-xs border-red-300 text-red-700 hover:text-red-800 hover:bg-red-50 hover:border-red-400 bg-red-50/50 font-semibold h-7 px-2" title="تصفير جميع العدادات">
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>تصفير</span>
+                  </Button>
+                  <Switch checked={false} onCheckedChange={toggleAutoReset} className="scale-75 data-[state=unchecked]:bg-gray-300" />
+                </div>
+              )}
+            </div>
             {/* Settings Button */}
             <Button variant="outline" size="sm" onClick={openSettings} className="gap-1.5 text-xs border-cyan-300 text-cyan-700 hover:text-cyan-800 hover:bg-cyan-50 hover:border-cyan-400 bg-cyan-50/50 font-semibold">
               <Settings className="w-4 h-4" />
@@ -413,6 +491,23 @@ export default function Home() {
               <p className="text-[10px] text-gray-400">سعر كل دقيقة بعد تجاوز الحد المجاني</p>
             </div>
 
+            {/* Auto Reset Weekly */}
+            <Separator />
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
+                  <Zap className="w-4 h-4 text-emerald-600" />
+                  تصفير تلقائي أسبوعي
+                </Label>
+                <p className="text-[10px] text-gray-400">يتم تصفير العدادات تلقائياً كل يوم سبت</p>
+              </div>
+              <Switch
+                checked={settingsForm.autoResetWeekly}
+                onCheckedChange={(checked) => setSettingsForm((prev) => ({ ...prev, autoResetWeekly: checked }))}
+                className="data-[state=checked]:bg-emerald-500"
+              />
+            </div>
+
             {/* Preview */}
             <div className="bg-gradient-to-r from-cyan-50 to-emerald-50 border border-cyan-200 rounded-xl p-3">
               <p className="text-xs font-semibold text-cyan-800 mb-1.5">معاينة الإعدادات:</p>
@@ -423,6 +518,12 @@ export default function Home() {
               <div className="flex justify-between text-xs text-gray-600 mt-1">
                 <span>سعر الإضافي:</span>
                 <span className="font-bold text-amber-700">{settingsForm.pricePerMinute} شيكل/دقيقة</span>
+              </div>
+              <div className="flex justify-between text-xs text-gray-600 mt-1">
+                <span>التصفير:</span>
+                <span className={`font-bold ${settingsForm.autoResetWeekly ? 'text-emerald-700' : 'text-amber-700'}`}>
+                  {settingsForm.autoResetWeekly ? 'تلقائي كل أسبوع' : 'يدوي بالزر'}
+                </span>
               </div>
             </div>
           </div>
