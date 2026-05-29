@@ -288,7 +288,7 @@ export default function Home() {
         // Auto-reset all counters
         storeResetAllWeeklyUsage()
         // Update lastAutoReset to now
-        const newSettings = { ...currentSettings, lastAutoReset: now.toISOString() }
+        const newSettings = { ...currentSettings, lastAutoReset: new Date().toISOString() }
         storeSaveSettings(newSettings)
         setSettings(newSettings)
         setTimers({})
