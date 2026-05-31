@@ -34,6 +34,14 @@ export async function POST(request: Request) {
       )
     }
 
+    // Check if email service is configured
+    if (!process.env.RESEND_API_KEY) {
+      return NextResponse.json(
+        { error: 'خدمة تأكيد البريد الإلكتروني غير متاحة حالياً' },
+        { status: 503 }
+      )
+    }
+
     // Check rate limiting: don't allow resend within 60 seconds
     const existingToken = await db.verificationToken.findFirst({
       where: { identifier: email },

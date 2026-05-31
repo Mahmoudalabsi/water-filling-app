@@ -35,10 +35,28 @@ export const authOptions: NextAuthOptions = {
           throw new Error('البريد الإلكتروني أو كلمة المرور غير صحيحة')
         }
 
-        // Check if email is verified (only for credential-based users)
-        // Google users have emailVerified set automatically
+        // Check if email is verified
+        // - Google users have emailVerified set automatically on creation
+        // - Legacy users (registered before email verification feature) may have null emailVerified
+        //   They are auto-verified on first login if they don't have a VerificationToken record
+        // - New users must verify their email before signing in
         if (!user.emailVerified) {
-          throw new Error('EMAIL_NOT_VERIFIED')
+          // Auto-verify legacy users who registered before email verification was added
+          // We detect them by checking if they have no pending verification tokens
+          const pendingToken = await db.verificationToken.findFirst({
+            where: { identifier: user.email },
+          })
+
+          if (pendingToken) {
+            // New user with pending verification - must verify first
+            throw new Error('EMAIL_NOT_VERIFIED')
+          }
+
+          // Legacy user (no pending token) - auto-verify them
+          await db.user.update({
+            where: { id: user.id },
+            data: { emailVerified: new Date() },
+          })
         }
 
         return { id: user.id, email: user.email, name: user.name, image: user.image }

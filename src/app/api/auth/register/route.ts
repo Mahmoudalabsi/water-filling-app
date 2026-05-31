@@ -48,13 +48,17 @@ export async function POST(request: Request) {
 
     const hashedPassword = await bcrypt.hash(password, 12)
 
-    // Create user WITHOUT emailVerified (they need to verify first)
+    // Check if email verification is available (RESEND_API_KEY is set)
+    const hasEmailService = !!process.env.RESEND_API_KEY
+
+    // Create user - if email service is not available, auto-verify
     const user = await db.user.create({
       data: {
         name,
         email,
         password: hashedPassword,
-        // emailVerified is null - user must verify their email
+        // Auto-verify if no email service is configured
+        emailVerified: hasEmailService ? null : new Date(),
       },
     })
 
@@ -68,34 +72,56 @@ export async function POST(request: Request) {
       },
     })
 
-    // Generate and save verification code
-    const code = generateVerificationCode()
-    await saveVerificationToken(email, code)
+    // If email service is available, send verification email
+    if (hasEmailService) {
+      try {
+        const code = generateVerificationCode()
+        await saveVerificationToken(email, code)
 
-    // Send verification email
-    const emailResult = await sendVerificationEmail({
-      email,
-      code,
-      name,
-    })
+        const emailResult = await sendVerificationEmail({
+          email,
+          code,
+          name,
+        })
 
-    if (!emailResult.success) {
-      console.error('Failed to send verification email:', emailResult.error)
-      // Still return success for registration, but indicate email issue
-      return NextResponse.json({
-        success: true,
-        requiresVerification: true,
-        emailSent: false,
-        message: 'تم إنشاء الحساب لكن حدث خطأ في إرسال بريد التحقق، يرجى طلب رمز جديد',
-        user: { id: user.id, email: user.email, name: user.name },
-      }, { status: 201 })
+        if (!emailResult.success) {
+          console.error('Failed to send verification email:', emailResult.error)
+          // Still return success for registration, but indicate email issue
+          return NextResponse.json({
+            success: true,
+            requiresVerification: true,
+            emailSent: false,
+            message: 'تم إنشاء الحساب لكن حدث خطأ في إرسال بريد التحقق، يرجى طلب رمز جديد',
+            user: { id: user.id, email: user.email, name: user.name },
+          }, { status: 201 })
+        }
+
+        return NextResponse.json({
+          success: true,
+          requiresVerification: true,
+          emailSent: true,
+          message: 'تم إنشاء الحساب. يرجى التحقق من بريدك الإلكتروني',
+          user: { id: user.id, email: user.email, name: user.name },
+        }, { status: 201 })
+      } catch (emailError) {
+        console.error('Email service error:', emailError)
+        // If email fails, still allow registration but require verification later
+        return NextResponse.json({
+          success: true,
+          requiresVerification: true,
+          emailSent: false,
+          message: 'تم إنشاء الحساب لكن حدث خطأ في إرسال بريد التحقق، يرجى طلب رمز جديد',
+          user: { id: user.id, email: user.email, name: user.name },
+        }, { status: 201 })
+      }
     }
 
+    // No email service - auto-verified, can sign in directly
     return NextResponse.json({
       success: true,
-      requiresVerification: true,
-      emailSent: true,
-      message: 'تم إنشاء الحساب. يرجى التحقق من بريدك الإلكتروني',
+      requiresVerification: false,
+      emailSent: false,
+      message: 'تم إنشاء الحساب بنجاح',
       user: { id: user.id, email: user.email, name: user.name },
     }, { status: 201 })
   } catch (error) {
