@@ -70,9 +70,10 @@ export default function SetupPage() {
                 <ol className="text-sm text-amber-700 space-y-2 list-decimal list-inside">
                   <li>اذهب إلى <strong>Vercel Dashboard</strong> ← مشروعك ← تبويب <strong>Storage</strong></li>
                   <li>اضغط <strong>Create Database</strong> ← اختر <strong>Postgres (Neon)</strong></li>
-                  <li>بعد إنشاء القاعدة، اضغط تبويب <strong>.env.local</strong></li>
-                  <li>انسخ قيمة <strong>POSTGRES_PRISMA_URL</strong> وأضفها كـ <code className="bg-amber-100 px-1 rounded">DATABASE_URL</code> في Settings → Environment Variables</li>
-                  <li>انسخ قيمة <strong>POSTGRES_URL_NON_POOLING</strong> وأضفها كـ <code className="bg-amber-100 px-1 rounded">DIRECT_URL</code></li>
+                  <li>بعد إنشاء القاعدة، اضغط <strong>Connect</strong> لربطها بالمشروع تلقائياً</li>
+                  <li>ستتم إضافة المتغيرات تلقائياً (<code className="bg-amber-100 px-1 rounded">POSTGRES_PRISMA_URL</code> و <code className="bg-amber-100 px-1 rounded">POSTGRES_URL_NON_POOLING</code>)</li>
+                  <li>أضف أيضاً متغير <code className="bg-amber-100 px-1 rounded">NEXTAUTH_SECRET</code> بمفتاح سري عشوائي</li>
+                  <li>أضف متغير <code className="bg-amber-100 px-1 rounded">NEXTAUTH_URL</code> برابط موقعك (https://xxx.vercel.app)</li>
                   <li>اضغط <strong>Redeploy</strong> من تبويب Deployments</li>
                 </ol>
               </div>
@@ -81,20 +82,20 @@ export default function SetupPage() {
                 <h3 className="font-semibold text-cyan-800 mb-2">متغيرات البيئة المطلوبة في Vercel:</h3>
                 <div className="space-y-3 text-sm">
                   <div className="flex items-start gap-2">
-                    <code className="bg-cyan-100 px-2 py-0.5 rounded text-cyan-800 font-mono whitespace-nowrap">DATABASE_URL</code>
-                    <span className="text-cyan-700">رابط الاتصال المُجمّع (POSTGRES_PRISMA_URL)</span>
+                    <code className="bg-emerald-100 px-2 py-0.5 rounded text-emerald-800 font-mono whitespace-nowrap">POSTGRES_PRISMA_URL</code>
+                    <span className="text-cyan-700">يُضاف تلقائياً عند ربط Postgres</span>
                   </div>
                   <div className="flex items-start gap-2">
-                    <code className="bg-cyan-100 px-2 py-0.5 rounded text-cyan-800 font-mono whitespace-nowrap">DIRECT_URL</code>
-                    <span className="text-cyan-700">رابط الاتصال المباشر (POSTGRES_URL_NON_POOLING)</span>
+                    <code className="bg-emerald-100 px-2 py-0.5 rounded text-emerald-800 font-mono whitespace-nowrap">POSTGRES_URL_NON_POOLING</code>
+                    <span className="text-cyan-700">يُضاف تلقائياً عند ربط Postgres</span>
                   </div>
                   <div className="flex items-start gap-2">
                     <code className="bg-cyan-100 px-2 py-0.5 rounded text-cyan-800 font-mono whitespace-nowrap">NEXTAUTH_SECRET</code>
-                    <span className="text-cyan-700">مفتاح سري عشوائي</span>
+                    <span className="text-cyan-700">مفتاح سري عشوائي (أضفه يدوياً)</span>
                   </div>
                   <div className="flex items-start gap-2">
                     <code className="bg-cyan-100 px-2 py-0.5 rounded text-cyan-800 font-mono whitespace-nowrap">NEXTAUTH_URL</code>
-                    <span className="text-cyan-700">رابط موقعك (https://xxx.vercel.app)</span>
+                    <span className="text-cyan-700">رابط موقعك (أضفه يدوياً)</span>
                   </div>
                 </div>
               </div>

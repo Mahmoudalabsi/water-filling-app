@@ -15,7 +15,7 @@ export async function GET() {
       return NextResponse.json({
         status: 'error',
         message: 'Tables not found. Please run: npx prisma db push',
-        hint: 'Go to Vercel Dashboard → Settings → Environment Variables and make sure DATABASE_URL and DIRECT_URL are set correctly, then redeploy.',
+        hint: 'Go to Vercel Dashboard → Storage → Connect your Postgres database to the project, then redeploy.'
       }, { status: 500 })
     }
 
@@ -23,7 +23,7 @@ export async function GET() {
       status: 'error',
       message: 'Database connection failed',
       error: error?.message || 'Unknown error',
-      hint: 'Check that DATABASE_URL is set to a valid PostgreSQL connection string in Vercel Environment Variables.',
+      hint: 'Make sure you have connected a Vercel Postgres database to your project in Vercel Dashboard → Storage.'
     }, { status: 500 })
   }
 }
