@@ -11,6 +11,9 @@ import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { useLanguage } from '@/components/language-provider'
+import { ThemeLanguageToggle } from '@/components/theme-language-toggle'
+import { getDayNames } from '@/lib/i18n'
 import {
   Users,
   Plus,
@@ -101,6 +104,7 @@ interface ConfirmState {
 
 export default function Home() {
   const { data: session, status: sessionStatus } = useSession()
+  const { t, locale, dir } = useLanguage()
   const [families, setFamilies] = useState<FamilyWithUsage[]>([])
   const [settings, setSettings] = useState<AppSettings>({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, resetDay: 6, lastAutoReset: null })
   const [newFamilyName, setNewFamilyName] = useState('')
@@ -126,7 +130,7 @@ export default function Home() {
 
   // Confirm dialog
   const [confirmState, setConfirmState] = useState<ConfirmState>({
-    open: false, title: '', message: '', confirmLabel: 'تأكيد', cancelLabel: 'إلغاء', variant: 'danger', onConfirm: () => {}
+    open: false, title: '', message: '', confirmLabel: t('confirm'), cancelLabel: t('cancel'), variant: 'danger', onConfirm: () => {}
   })
 
   const showToast = useCallback((type: ToastType, message: string, duration = 3000) => {
@@ -153,21 +157,21 @@ export default function Home() {
       open: true,
       title,
       message,
-      confirmLabel: variant === 'danger' ? 'حذف' : variant === 'warning' ? 'تأكيد' : 'موافق',
-      cancelLabel: 'إلغاء',
+      confirmLabel: variant === 'danger' ? t('delete') : variant === 'warning' ? t('confirm') : t('confirm'),
+      cancelLabel: t('cancel'),
       variant,
       onConfirm: () => {
         setConfirmState((prev) => ({ ...prev, open: false }))
         onConfirm()
       },
     })
-  }, [])
+  }, [t])
 
   const freeMin = settings.freeMinutesPerWeek
   const priceMin = settings.pricePerMinute
 
-  const dayNames = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
-  const resetDayName = dayNames[settings.resetDay ?? 6] || 'السبت'
+  const dayNames = getDayNames(locale)
+  const resetDayName = dayNames[settings.resetDay ?? 6] || dayNames[6]
 
   const getWeekStart = (resetDay: number): Date => {
     const now = new Date()
@@ -214,7 +218,7 @@ export default function Home() {
     const result = await installPrompt.userChoice
     if (result.outcome === 'accepted') {
       setShowInstallBanner(false)
-      showToast('success', 'تم تثبيت التطبيق بنجاح!')
+      showToast('success', t('installSuccess'))
     }
     setInstallPrompt(null)
   }
@@ -259,9 +263,9 @@ export default function Home() {
         }
       })
     } catch {
-      showToast('error', 'حدث خطأ في تحميل البيانات')
+      showToast('error', t('dataLoadError'))
     }
-  }, [startTimerInterval, showToast])
+  }, [startTimerInterval, showToast, t])
 
   useEffect(() => {
     const init = async () => {
@@ -277,26 +281,27 @@ export default function Home() {
   // Family operations via API
   const addFamily = async () => {
     if (!newFamilyName.trim()) return
+    const familyNameCopy = newFamilyName.trim()
     try {
       const res = await fetch('/api/families', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newFamilyName.trim() }),
+        body: JSON.stringify({ name: familyNameCopy }),
       })
       if (!res.ok) throw new Error()
       setNewFamilyName('')
       setAddDialogOpen(false)
       await refreshFamilies()
-      showToast('success', `تمت إضافة عائلة "${newFamilyName.trim()}" بنجاح`)
+      showToast('success', `${t('addFamilySuccess')} "${familyNameCopy}"`)
     } catch {
-      showToast('error', 'حدث خطأ في إضافة العائلة')
+      showToast('error', t('addFamilyError'))
     }
   }
 
   const deleteFamily = (id: string, name: string) => {
     showConfirm(
-      'حذف العائلة',
-      `هل أنت متأكد من حذف عائلة "${name}"؟ سيتم حذف جميع بياناتها وجلساتها.`,
+      t('deleteFamily'),
+      `${t('deleteFamilyConfirm')} "${name}"؟ ${t('deleteFamilyWarning')}`,
       async () => {
         try {
           const res = await fetch(`/api/families/${id}`, { method: 'DELETE' })
@@ -304,9 +309,9 @@ export default function Home() {
           stopTimerInterval(id)
           setTimers((prev) => { const n = { ...prev }; delete n[id]; return n })
           await refreshFamilies()
-          showToast('success', `تم حذف عائلة "${name}"`)
+          showToast('success', `${t('deleteFamilySuccess')} "${name}"`)
         } catch {
-          showToast('error', 'حدث خطأ في حذف العائلة')
+          showToast('error', t('deleteFamilyError'))
         }
       },
       'danger'
@@ -331,9 +336,9 @@ export default function Home() {
       setEditFamilyDialogOpen(false)
       setEditingFamily(null)
       await refreshFamilies()
-      showToast('success', 'تم تعديل اسم العائلة بنجاح')
+      showToast('success', t('editFamilySuccess'))
     } catch {
-      showToast('error', 'حدث خطأ في تعديل العائلة')
+      showToast('error', t('editFamilyError'))
     }
   }
 
@@ -342,15 +347,15 @@ export default function Home() {
       const res = await fetch(`/api/families/${familyId}/start`, { method: 'POST' })
       const data = await res.json()
       if (!res.ok) {
-        showToast('error', data.error || 'حدث خطأ في بدء الجلسة')
+        showToast('error', data.error || t('sessionStartError'))
         return
       }
       setTimers((prev) => ({ ...prev, [familyId]: 0 }))
       startTimerInterval(familyId)
       await refreshFamilies()
-      showToast('info', 'تم بدء جلسة التعبئة', 2000)
+      showToast('info', t('sessionStarted'), 2000)
     } catch {
-      showToast('error', 'حدث خطأ في بدء الجلسة')
+      showToast('error', t('sessionStartError'))
     }
   }
 
@@ -366,16 +371,16 @@ export default function Home() {
       stopTimerInterval(familyId)
       await refreshFamilies()
       const mins = (elapsed / 60).toFixed(1)
-      showToast('success', `تم إيقاف الجلسة - المدة: ${mins} دقيقة`)
+      showToast('success', `${t('sessionStopSuccess')} - ${t('duration')}: ${mins} ${t('minute')}`)
     } catch {
-      showToast('error', 'حدث خطأ في إيقاف الجلسة')
+      showToast('error', t('sessionStopError'))
     }
   }
 
   const resetWeekly = (familyId: string, familyName: string) => {
     showConfirm(
-      'إعادة تعيين الاستخدام',
-      `هل أنت متأكد من إعادة تعيين الاستخدام الأسبوعي لعائلة "${familyName}"؟`,
+      t('resetUsage'),
+      `${t('resetConfirm')} "${familyName}"؟`,
       async () => {
         try {
           const res = await fetch(`/api/families/${familyId}/reset`, { method: 'POST' })
@@ -383,9 +388,9 @@ export default function Home() {
           stopTimerInterval(familyId)
           setTimers((prev) => { const n = { ...prev }; delete n[familyId]; return n })
           await refreshFamilies()
-          showToast('success', `تم إعادة تعيين الاستخدام لعائلة "${familyName}"`)
+          showToast('success', `${t('resetSuccess')} "${familyName}"`)
         } catch {
-          showToast('error', 'حدث خطأ في إعادة التعيين')
+          showToast('error', t('resetError'))
         }
       },
       'warning'
@@ -394,8 +399,8 @@ export default function Home() {
 
   const resetAllCounters = () => {
     showConfirm(
-      'تصفير جميع العدادات',
-      'هل أنت متأكد من تصفير جميع العدادات؟ سيتم حذف جميع الجلسات لجميع العائلات.',
+      t('resetAllCounters'),
+      t('resetAllConfirm'),
       async () => {
         try {
           const res = await fetch('/api/reset-all', {
@@ -409,9 +414,9 @@ export default function Home() {
           })
           setTimers({})
           await refreshFamilies()
-          showToast('success', 'تم تصفير جميع العدادات بنجاح')
+          showToast('success', t('resetAllSuccess'))
         } catch {
-          showToast('error', 'حدث خطأ في تصفير العدادات')
+          showToast('error', t('resetAllError'))
         }
       },
       'warning'
@@ -435,9 +440,9 @@ export default function Home() {
       if (!res.ok) throw new Error()
       setSettingsDialogOpen(false)
       await refreshFamilies()
-      showToast('success', 'تم حفظ الإعدادات بنجاح')
+      showToast('success', t('savedSuccessfully'))
     } catch {
-      showToast('error', 'حدث خطأ في حفظ الإعدادات')
+      showToast('error', t('settingsError'))
     }
   }
 
@@ -457,9 +462,9 @@ export default function Home() {
       if (!res.ok) throw new Error()
       setSettingsForm({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, resetDay: 6, lastAutoReset: null })
       await refreshFamilies()
-      showToast('info', 'تم استعادة الإعدادات الافتراضية')
+      showToast('info', t('restoreDefaultsSuccess'))
     } catch {
-      showToast('error', 'حدث خطأ في استعادة الإعدادات')
+      showToast('error', t('settingsError'))
     }
   }
 
@@ -478,7 +483,7 @@ export default function Home() {
           Object.values(timerIntervals.current).forEach(clearInterval)
           timerIntervals.current = {}
           await refreshFamilies()
-          showToast('success', 'تم التصفير التلقائي الأسبوعي', 4000)
+          showToast('success', t('autoResetDone'), 4000)
         }
       } catch {
         // Silently handle auto-reset errors
@@ -488,7 +493,7 @@ export default function Home() {
     checkAutoReset()
     const interval = setInterval(checkAutoReset, 60000)
     return () => clearInterval(interval)
-  }, [refreshFamilies, showToast])
+  }, [refreshFamilies, showToast, t])
 
   // Formatting helpers
   const formatTime = (seconds: number): string => {
@@ -498,8 +503,9 @@ export default function Home() {
     if (hours > 0) return `${hours.toString().padStart(2, '0')}:${(mins % 60).toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
   }
-  const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
-  const formatTimeOfDay = (dateStr: string) => new Date(dateStr).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
+  const localeStr = locale === 'ar' ? 'ar-EG' : 'en-US'
+  const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString(localeStr, { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
+  const formatTimeOfDay = (dateStr: string) => new Date(dateStr).toLocaleTimeString(localeStr, { hour: '2-digit', minute: '2-digit' })
 
   const calculateCost = (family: FamilyWithUsage) => {
     const totalSeconds = family.weeklySeconds + (timers[family.id] || 0)
@@ -524,21 +530,21 @@ export default function Home() {
 
   // Toast icon and style mapping
   const toastConfig: Record<ToastType, { icon: typeof CheckCircle2; bg: string; border: string; iconColor: string; textColor: string }> = {
-    success: { icon: CheckCircle2, bg: 'bg-emerald-50', border: 'border-emerald-200', iconColor: 'text-emerald-600', textColor: 'text-emerald-800' },
-    error: { icon: AlertCircle, bg: 'bg-red-50', border: 'border-red-200', iconColor: 'text-red-600', textColor: 'text-red-800' },
-    warning: { icon: AlertTriangle, bg: 'bg-amber-50', border: 'border-amber-200', iconColor: 'text-amber-600', textColor: 'text-amber-800' },
-    info: { icon: Info, bg: 'bg-cyan-50', border: 'border-cyan-200', iconColor: 'text-cyan-600', textColor: 'text-cyan-800' },
+    success: { icon: CheckCircle2, bg: 'bg-emerald-50 dark:bg-emerald-900/20', border: 'border-emerald-200 dark:border-emerald-800', iconColor: 'text-emerald-600 dark:text-emerald-400', textColor: 'text-emerald-800 dark:text-emerald-300' },
+    error: { icon: AlertCircle, bg: 'bg-red-50 dark:bg-red-900/20', border: 'border-red-200 dark:border-red-800', iconColor: 'text-red-600 dark:text-red-400', textColor: 'text-red-800 dark:text-red-300' },
+    warning: { icon: AlertTriangle, bg: 'bg-amber-50 dark:bg-amber-900/20', border: 'border-amber-200 dark:border-amber-800', iconColor: 'text-amber-600 dark:text-amber-400', textColor: 'text-amber-800 dark:text-amber-300' },
+    info: { icon: Info, bg: 'bg-cyan-50 dark:bg-cyan-900/20', border: 'border-cyan-200 dark:border-cyan-800', iconColor: 'text-cyan-600 dark:text-cyan-400', textColor: 'text-cyan-800 dark:text-cyan-300' },
   }
 
   // Show loading while session is being checked
   if (sessionStatus === 'loading' || loading) {
     return (
-      <div dir="rtl" className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-emerald-50 flex items-center justify-center">
+      <div dir={dir} className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-emerald-50 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center shadow-xl shadow-cyan-200 mx-auto mb-4 animate-pulse">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center shadow-xl shadow-cyan-200 dark:shadow-cyan-900/30 mx-auto mb-4 animate-pulse">
             <Droplets className="w-8 h-8 text-white" />
           </div>
-          <p className="text-gray-500 text-sm">جاري التحميل...</p>
+          <p className="text-gray-500 dark:text-gray-400 text-sm">{t('loading')}</p>
         </div>
       </div>
     )
@@ -550,19 +556,19 @@ export default function Home() {
       window.location.href = '/signin'
     }
     return (
-      <div dir="rtl" className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-emerald-50 flex items-center justify-center">
+      <div dir={dir} className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-emerald-50 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center shadow-xl shadow-cyan-200 mx-auto mb-4">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center shadow-xl shadow-cyan-200 dark:shadow-cyan-900/30 mx-auto mb-4">
             <Droplets className="w-8 h-8 text-white" />
           </div>
-          <p className="text-gray-500 text-sm">جاري التحويل لصفحة الدخول...</p>
+          <p className="text-gray-500 dark:text-gray-400 text-sm">{t('redirecting')}</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div dir="rtl" className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-emerald-50">
+    <div dir={dir} className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-emerald-50 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900">
       {/* ====== TOAST NOTIFICATIONS ====== */}
       <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-2 w-[90%] max-w-md">
         {toasts.map((toast) => {
@@ -585,16 +591,16 @@ export default function Home() {
 
       {/* ====== CONFIRM DIALOG ====== */}
       <Dialog open={confirmState.open} onOpenChange={(open) => { if (!open) setConfirmState((prev) => ({ ...prev, open: false })) }}>
-        <DialogContent className="sm:max-w-md" dir="rtl">
+        <DialogContent className="sm:max-w-md" dir={dir}>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-right">
-              {confirmState.variant === 'danger' && <AlertCircle className="w-5 h-5 text-red-600" />}
-              {confirmState.variant === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-600" />}
-              {confirmState.variant === 'info' && <Info className="w-5 h-5 text-cyan-600" />}
+            <DialogTitle className={`flex items-center gap-2 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
+              {confirmState.variant === 'danger' && <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />}
+              {confirmState.variant === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />}
+              {confirmState.variant === 'info' && <Info className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />}
               {confirmState.title}
             </DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-gray-600 py-2">{confirmState.message}</p>
+          <p className="text-sm text-gray-600 dark:text-gray-300 py-2">{confirmState.message}</p>
           <DialogFooter className="gap-2">
             <DialogClose asChild>
               <Button variant="outline">{confirmState.cancelLabel}</Button>
@@ -623,68 +629,71 @@ export default function Home() {
         <div className="bg-gradient-to-r from-cyan-600 to-emerald-600 text-white p-3 flex items-center justify-between gap-3 sticky top-0 z-[60]">
           <div className="flex items-center gap-2">
             <Download className="w-5 h-5" />
-            <span className="text-sm font-medium">ثبّت التطبيق على هاتفك</span>
+            <span className="text-sm font-medium">{t('installBannerDesc')}</span>
           </div>
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="secondary" onClick={handleInstall} className="gap-1"><Smartphone className="w-3 h-3" />تثبيت</Button>
+            <Button size="sm" variant="secondary" onClick={handleInstall} className="gap-1"><Smartphone className="w-3 h-3" />{t('installBtn')}</Button>
             <Button size="sm" variant="ghost" className="text-white hover:bg-white/20" onClick={() => setShowInstallBanner(false)}>✕</Button>
           </div>
         </div>
       )}
 
       {/* ====== HEADER ====== */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-cyan-100 shadow-sm">
+      <header className="sticky top-0 z-50 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-cyan-100 dark:border-gray-700 shadow-sm">
         <div className="max-w-7xl mx-auto px-3 md:px-6 py-2 md:py-3 flex items-center justify-between">
           {/* Logo & Title */}
           <div className="flex items-center gap-2 md:gap-3">
-            <div className="w-9 h-9 md:w-11 md:h-11 rounded-xl bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center shadow-lg shadow-cyan-200">
+            <div className="w-9 h-9 md:w-11 md:h-11 rounded-xl bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center shadow-lg shadow-cyan-200 dark:shadow-cyan-900/30">
               <Droplets className="w-5 h-5 md:w-6 md:h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-base md:text-xl font-bold text-gray-800">تعبئة المياه</h1>
-              <p className="text-[10px] md:text-xs text-gray-500">إدارة استهلاك المياه للعائلات</p>
+              <h1 className="text-base md:text-xl font-bold text-gray-800 dark:text-gray-100">{t('appName')}</h1>
+              <p className="text-[10px] md:text-xs text-gray-500 dark:text-gray-400">{t('appDesc')}</p>
             </div>
           </div>
 
           {/* Action buttons */}
           <div className="flex items-center gap-1 md:gap-2">
+            {/* Theme & Language Toggle */}
+            <ThemeLanguageToggle />
+
             {activeFamilyCount > 0 && (
               <Badge variant="default" className="bg-emerald-500 hover:bg-emerald-600 text-white gap-1 text-[10px] md:text-xs">
                 <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
-                <span className="hidden sm:inline">{activeFamilyCount} نشط</span>
+                <span className="hidden sm:inline">{activeFamilyCount} {t('active')}</span>
                 <span className="sm:hidden">{activeFamilyCount}</span>
               </Badge>
             )}
 
             {/* Auto reset indicator */}
             {settings.autoResetWeekly ? (
-              <div className="hidden md:flex items-center gap-1.5 bg-emerald-50/80 rounded-lg border border-emerald-200 px-2.5 py-1.5">
-                <Zap className="w-3.5 h-3.5 text-emerald-600" />
-                <span className="text-[11px] font-semibold text-emerald-700">تلقائي</span>
-                <span className="text-[10px] text-emerald-600 bg-emerald-100 rounded px-1 py-0.5 border border-emerald-300">{resetDayName}</span>
+              <div className="hidden md:flex items-center gap-1.5 bg-emerald-50/80 dark:bg-emerald-900/20 rounded-lg border border-emerald-200 dark:border-emerald-800 px-2.5 py-1.5">
+                <Zap className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">{t('auto')}</span>
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/40 rounded px-1 py-0.5 border border-emerald-300 dark:border-emerald-700">{resetDayName}</span>
               </div>
             ) : (
-              <Button variant="outline" size="sm" onClick={resetAllCounters} className="gap-1 text-xs border-red-300 text-red-700 hover:text-red-800 hover:bg-red-50 hover:border-red-400 bg-red-50/50 font-semibold h-7 px-2" title="تصفير جميع العدادات">
+              <Button variant="outline" size="sm" onClick={resetAllCounters} className="gap-1 text-xs border-red-300 dark:border-red-800 text-red-700 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-400 dark:hover:border-red-700 bg-red-50/50 dark:bg-red-900/10 font-semibold h-7 px-2" title={t('resetAllCounters')}>
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">تصفير</span>
+                <span className="hidden sm:inline">{t('resetAll')}</span>
               </Button>
             )}
 
             {/* Settings */}
-            <Button variant="outline" size="sm" onClick={openSettings} className="gap-1 md:gap-1.5 text-xs border-cyan-300 text-cyan-700 hover:text-cyan-800 hover:bg-cyan-50 hover:border-cyan-400 bg-cyan-50/50 font-semibold">
+            <Button variant="outline" size="sm" onClick={openSettings} className="gap-1 md:gap-1.5 text-xs border-cyan-300 dark:border-cyan-800 text-cyan-700 dark:text-cyan-400 hover:text-cyan-800 dark:hover:text-cyan-300 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 hover:border-cyan-400 dark:hover:border-cyan-700 bg-cyan-50/50 dark:bg-cyan-900/10 font-semibold">
               <Settings className="w-4 h-4" />
-              <span className="hidden md:inline">الإعدادات</span>
+              <span className="hidden md:inline">{t('settings')}</span>
             </Button>
 
             {/* Log view toggle */}
             <Button
               variant={currentView === 'log' ? 'default' : 'outline'}
               size="sm"
-              className={`gap-1 md:gap-1.5 text-xs ${currentView === 'log' ? 'bg-gradient-to-r from-cyan-600 to-emerald-600 text-white border-transparent' : 'border-cyan-200 text-cyan-700 hover:bg-cyan-50'}`}
+              className={`gap-1 md:gap-1.5 text-xs ${currentView === 'log' ? 'bg-gradient-to-r from-cyan-600 to-emerald-600 text-white border-transparent' : 'border-cyan-200 dark:border-cyan-800 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20'}`}
               onClick={() => setCurrentView(currentView === 'log' ? 'dashboard' : 'log')}
             >
               <History className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">السجل</span>
+              <span className="hidden md:inline">{t('log')}</span>
             </Button>
 
             {/* Add family */}
@@ -692,25 +701,25 @@ export default function Home() {
               <DialogTrigger asChild>
                 <Button size="sm" className="gap-1 md:gap-1.5 bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-700 hover:to-emerald-700 text-white shadow-md text-xs">
                   <Plus className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">إضافة</span>
+                  <span className="hidden sm:inline">{t('add')}</span>
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-md" dir="rtl">
+              <DialogContent className="sm:max-w-md" dir={dir}>
                 <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2 text-right">
-                    <Users className="w-5 h-5 text-cyan-600" />
-                    إضافة عائلة جديدة
+                  <DialogTitle className={`flex items-center gap-2 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
+                    <Users className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+                    {t('addFamilyNew')}
                   </DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">
-                    <Label>اسم العائلة</Label>
-                    <Input placeholder="أدخل اسم العائلة..." value={newFamilyName} onChange={(e) => setNewFamilyName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addFamily()} className="text-right" />
+                    <Label>{t('familyName')}</Label>
+                    <Input placeholder={t('enterFamilyName')} value={newFamilyName} onChange={(e) => setNewFamilyName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addFamily()} className={dir === 'rtl' ? 'text-right' : 'text-left'} />
                   </div>
                 </div>
                 <DialogFooter className="gap-2">
-                  <DialogClose asChild><Button variant="outline">إلغاء</Button></DialogClose>
-                  <Button onClick={addFamily} disabled={!newFamilyName.trim()} className="bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-700 hover:to-emerald-700 text-white">إضافة</Button>
+                  <DialogClose asChild><Button variant="outline">{t('cancel')}</Button></DialogClose>
+                  <Button onClick={addFamily} disabled={!newFamilyName.trim()} className="bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-700 hover:to-emerald-700 text-white">{t('add')}</Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -718,7 +727,7 @@ export default function Home() {
             {/* User Menu */}
             {session?.user && (
               <div className="flex items-center gap-1.5">
-                <div className="hidden sm:flex items-center gap-1.5 bg-gradient-to-r from-cyan-50 to-emerald-50 border border-cyan-200 rounded-lg px-2 py-1">
+                <div className="hidden sm:flex items-center gap-1.5 bg-gradient-to-r from-cyan-50 to-emerald-50 dark:from-cyan-900/20 dark:to-emerald-900/20 border border-cyan-200 dark:border-cyan-800 rounded-lg px-2 py-1">
                   {session.user.image ? (
                     <img src={session.user.image} alt={session.user.name || ''} className="w-5 h-5 rounded-full" />
                   ) : (
@@ -726,17 +735,17 @@ export default function Home() {
                       <User className="w-3 h-3 text-white" />
                     </div>
                   )}
-                  <span className="text-[11px] font-medium text-gray-700 max-w-[80px] truncate">{session.user.name || session.user.email}</span>
+                  <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300 max-w-[80px] truncate">{session.user.name || session.user.email}</span>
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => signOut({ callbackUrl: '/signin' })}
-                  className="gap-1 text-xs border-gray-200 text-gray-500 hover:text-red-600 hover:bg-red-50 hover:border-red-300 h-7 px-2"
-                  title="تسجيل الخروج"
+                  className="gap-1 text-xs border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-300 dark:hover:border-red-800 h-7 px-2"
+                  title={t('signOut')}
                 >
                   <LogOut className="w-3.5 h-3.5" />
-                  <span className="hidden md:inline">خروج</span>
+                  <span className="hidden md:inline">{t('signOutShort')}</span>
                 </Button>
               </div>
             )}
@@ -746,17 +755,17 @@ export default function Home() {
 
       {/* ====== SETTINGS DIALOG ====== */}
       <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
-        <DialogContent className="sm:max-w-md md:max-w-lg" dir="rtl">
+        <DialogContent className="sm:max-w-md md:max-w-lg" dir={dir}>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-right">
-              <Settings className="w-5 h-5 text-cyan-600" />
-              إعدادات التطبيق
+            <DialogTitle className={`flex items-center gap-2 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
+              <Settings className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+              {t('appSettings')}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-5 py-4">
             <div className="space-y-2">
-              <Label htmlFor="free-minutes" className="text-sm font-medium text-gray-700">
-                الدقائق المجانية الأسبوعية
+              <Label htmlFor="free-minutes" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                {t('freeMinutesWeekly')}
               </Label>
               <Input
                 id="free-minutes"
@@ -767,12 +776,12 @@ export default function Home() {
                 onChange={(e) => setSettingsForm((prev) => ({ ...prev, freeMinutesPerWeek: Number(e.target.value) || 0 }))}
                 className="text-center text-lg font-bold"
               />
-              <p className="text-[10px] text-gray-400">عدد الدقائق المجانية لكل عائلة أسبوعياً</p>
+              <p className="text-[10px] text-gray-400 dark:text-gray-500">{t('freeMinutesDesc')}</p>
             </div>
             <Separator />
             <div className="space-y-2">
-              <Label htmlFor="price-minute" className="text-sm font-medium text-gray-700">
-                سعر الدقيقة الإضافية (شيكل)
+              <Label htmlFor="price-minute" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                {t('pricePerMinute')}
               </Label>
               <Input
                 id="price-minute"
@@ -783,16 +792,16 @@ export default function Home() {
                 onChange={(e) => setSettingsForm((prev) => ({ ...prev, pricePerMinute: Number(e.target.value) || 0 }))}
                 className="text-center text-lg font-bold"
               />
-              <p className="text-[10px] text-gray-400">سعر كل دقيقة بعد تجاوز الحد المجاني</p>
+              <p className="text-[10px] text-gray-400 dark:text-gray-500">{t('priceDesc')}</p>
             </div>
             <Separator />
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
-                  <Zap className="w-4 h-4 text-emerald-600" />
-                  تصفير تلقائي أسبوعي
+                <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                  <Zap className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  {t('autoResetWeekly')}
                 </Label>
-                <p className="text-[10px] text-gray-400">يتم تصفير العدادات تلقائياً كل أسبوع</p>
+                <p className="text-[10px] text-gray-400 dark:text-gray-500">{t('autoResetDesc')}</p>
               </div>
               <Switch
                 checked={settingsForm.autoResetWeekly}
@@ -801,10 +810,10 @@ export default function Home() {
               />
             </div>
             {settingsForm.autoResetWeekly && (
-              <div className="space-y-2 bg-emerald-50/50 border border-emerald-200 rounded-xl p-3">
-                <Label className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
-                  <CalendarDays className="w-4 h-4 text-emerald-600" />
-                  يوم التصفير الأسبوعي
+              <div className="space-y-2 bg-emerald-50/50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-3">
+                <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                  <CalendarDays className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  {t('resetDay')}
                 </Label>
                 <div className="grid grid-cols-4 gap-1.5">
                   {dayNames.map((name, index) => (
@@ -814,44 +823,44 @@ export default function Home() {
                       onClick={() => setSettingsForm((prev) => ({ ...prev, resetDay: index }))}
                       className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-all ${
                         settingsForm.resetDay === index
-                          ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200 border border-emerald-500'
-                          : 'bg-white text-gray-600 border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50'
+                          ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200 dark:shadow-emerald-900/30 border border-emerald-500'
+                          : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:border-emerald-300 dark:hover:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/20'
                       }`}
                     >
                       {name}
                     </button>
                   ))}
                 </div>
-                <p className="text-[10px] text-gray-400">يتم تصفير العدادات تلقائياً كل يوم {dayNames[settingsForm.resetDay ?? 6]}</p>
+                <p className="text-[10px] text-gray-400 dark:text-gray-500">{t('resetDayAutoDesc')} {dayNames[settingsForm.resetDay ?? 6]}</p>
               </div>
             )}
-            <div className="bg-gradient-to-r from-cyan-50 to-emerald-50 border border-cyan-200 rounded-xl p-3">
-              <p className="text-xs font-semibold text-cyan-800 mb-1.5">معاينة الإعدادات:</p>
-              <div className="flex justify-between text-xs text-gray-600">
-                <span>الحد المجاني:</span>
-                <span className="font-bold text-emerald-700">{settingsForm.freeMinutesPerWeek} دقيقة/أسبوع</span>
+            <div className="bg-gradient-to-r from-cyan-50 to-emerald-50 dark:from-cyan-900/20 dark:to-emerald-900/20 border border-cyan-200 dark:border-cyan-800 rounded-xl p-3">
+              <p className="text-xs font-semibold text-cyan-800 dark:text-cyan-300 mb-1.5">{t('preview')}</p>
+              <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400">
+                <span>{t('freeLimit')}</span>
+                <span className="font-bold text-emerald-700 dark:text-emerald-400">{settingsForm.freeMinutesPerWeek} {t('minutesPerWeek')}</span>
               </div>
-              <div className="flex justify-between text-xs text-gray-600 mt-1">
-                <span>سعر الإضافي:</span>
-                <span className="font-bold text-amber-700">{settingsForm.pricePerMinute} شيكل/دقيقة</span>
+              <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mt-1">
+                <span>{t('extraPrice')}</span>
+                <span className="font-bold text-amber-700 dark:text-amber-400">{settingsForm.pricePerMinute} {t('shekelPerMinute')}</span>
               </div>
-              <div className="flex justify-between text-xs text-gray-600 mt-1">
-                <span>التصفير:</span>
-                <span className={`font-bold ${settingsForm.autoResetWeekly ? 'text-emerald-700' : 'text-amber-700'}`}>
-                  {settingsForm.autoResetWeekly ? `تلقائي كل ${dayNames[settingsForm.resetDay ?? 6]}` : 'يدوي بالزر'}
+              <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mt-1">
+                <span>{t('resetModeLabel')}</span>
+                <span className={`font-bold ${settingsForm.autoResetWeekly ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}>
+                  {settingsForm.autoResetWeekly ? `${t('autoResetOn')} ${dayNames[settingsForm.resetDay ?? 6]}` : t('autoResetManual')}
                 </span>
               </div>
             </div>
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" size="sm" onClick={handleResetSettings} className="gap-1.5 text-amber-600 hover:text-amber-700">
+            <Button variant="outline" size="sm" onClick={handleResetSettings} className="gap-1.5 text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300">
               <RotateCcw className="w-3.5 h-3.5" />
-              استعادة الافتراضي
+              {t('restoreDefaults')}
             </Button>
-            <DialogClose asChild><Button variant="outline">إلغاء</Button></DialogClose>
+            <DialogClose asChild><Button variant="outline">{t('cancel')}</Button></DialogClose>
             <Button onClick={saveSettingsForm} disabled={settingsForm.freeMinutesPerWeek <= 0 || settingsForm.pricePerMinute < 0} className="gap-1.5 bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-700 hover:to-emerald-700 text-white">
               <Save className="w-3.5 h-3.5" />
-              حفظ
+              {t('save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -859,30 +868,30 @@ export default function Home() {
 
       {/* ====== EDIT FAMILY DIALOG ====== */}
       <Dialog open={editFamilyDialogOpen} onOpenChange={setEditFamilyDialogOpen}>
-        <DialogContent className="sm:max-w-md" dir="rtl">
+        <DialogContent className="sm:max-w-md" dir={dir}>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-right">
-              <Pencil className="w-5 h-5 text-cyan-600" />
-              تعديل بيانات العائلة
+            <DialogTitle className={`flex items-center gap-2 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
+              <Pencil className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+              {t('editFamily')}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>اسم العائلة</Label>
+              <Label>{t('familyName')}</Label>
               <Input
-                placeholder="أدخل الاسم الجديد..."
+                placeholder={t('enterNewName')}
                 value={editFamilyName}
                 onChange={(e) => setEditFamilyName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && saveEditFamily()}
-                className="text-right"
+                className={dir === 'rtl' ? 'text-right' : 'text-left'}
               />
             </div>
           </div>
           <DialogFooter className="gap-2">
-            <DialogClose asChild><Button variant="outline">إلغاء</Button></DialogClose>
+            <DialogClose asChild><Button variant="outline">{t('cancel')}</Button></DialogClose>
             <Button onClick={saveEditFamily} disabled={!editFamilyName.trim()} className="gap-1.5 bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-700 hover:to-emerald-700 text-white">
               <Save className="w-3.5 h-3.5" />
-              حفظ التعديل
+              {t('saveEdit')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -894,85 +903,85 @@ export default function Home() {
           {/* Stats Section - Responsive */}
           <div className="max-w-7xl mx-auto px-3 md:px-6 mt-3 md:mt-4">
             {/* Mobile: Settings info bar */}
-            <div className="md:hidden bg-gradient-to-r from-cyan-50 to-emerald-50 border border-cyan-200 rounded-xl p-3 flex flex-wrap items-center gap-3 justify-between mb-3">
+            <div className="md:hidden bg-gradient-to-r from-cyan-50 to-emerald-50 dark:from-cyan-900/20 dark:to-emerald-900/20 border border-cyan-200 dark:border-cyan-800 rounded-xl p-3 flex flex-wrap items-center gap-3 justify-between mb-3">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-cyan-100 flex items-center justify-center">
-                  <Clock className="w-4 h-4 text-cyan-700" />
+                <div className="w-8 h-8 rounded-lg bg-cyan-100 dark:bg-cyan-900/40 flex items-center justify-center">
+                  <Clock className="w-4 h-4 text-cyan-700 dark:text-cyan-400" />
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-cyan-800">مجاني: {freeMin} دقيقة/أسبوع</p>
-                  <p className="text-[10px] text-cyan-600">إضافي: {priceMin} شيكل/دقيقة</p>
+                  <p className="text-xs font-semibold text-cyan-800 dark:text-cyan-300">{t('freeLimitLabel')} {freeMin} {t('minutesPerWeek')}</p>
+                  <p className="text-[10px] text-cyan-600 dark:text-cyan-400">{t('extraPriceLabel')} {priceMin} {t('shekelPerMinute')}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 text-xs">
-                <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span><span className="text-gray-600">مجاني</span></div>
-                <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span><span className="text-gray-600">مدفوع</span></div>
+                <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span><span className="text-gray-600 dark:text-gray-400">{t('free')}</span></div>
+                <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span><span className="text-gray-600 dark:text-gray-400">{t('paid')}</span></div>
               </div>
             </div>
 
             {/* Desktop: Full stats dashboard */}
             <div className="hidden md:grid grid-cols-4 gap-4 mb-4">
-              <Card className="border-cyan-200 bg-gradient-to-br from-cyan-50 to-white shadow-sm hover:shadow-md transition-shadow">
+              <Card className="border-cyan-200 dark:border-cyan-800 bg-gradient-to-br from-cyan-50 to-white dark:from-cyan-900/20 dark:to-gray-900 shadow-sm hover:shadow-md transition-shadow">
                 <CardContent className="p-4 flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-cyan-100 flex items-center justify-center flex-shrink-0">
-                    <Users className="w-6 h-6 text-cyan-600" />
+                  <div className="w-12 h-12 rounded-xl bg-cyan-100 dark:bg-cyan-900/40 flex items-center justify-center flex-shrink-0">
+                    <Users className="w-6 h-6 text-cyan-600 dark:text-cyan-400" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold text-cyan-700">{families.length}</p>
-                    <p className="text-xs text-gray-500">إجمالي العائلات</p>
+                    <p className="text-2xl font-bold text-cyan-700 dark:text-cyan-400">{families.length}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{t('totalFamilies')}</p>
                   </div>
                 </CardContent>
               </Card>
-              <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50 to-white shadow-sm hover:shadow-md transition-shadow">
+              <Card className="border-emerald-200 dark:border-emerald-800 bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-900/20 dark:to-gray-900 shadow-sm hover:shadow-md transition-shadow">
                 <CardContent className="p-4 flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                    <Activity className="w-6 h-6 text-emerald-600" />
+                  <div className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center flex-shrink-0">
+                    <Activity className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold text-emerald-700">{activeFamilyCount}</p>
-                    <p className="text-xs text-gray-500">نشط حالياً</p>
+                    <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-400">{activeFamilyCount}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{t('activeNow')}</p>
                   </div>
                 </CardContent>
               </Card>
-              <Card className="border-amber-200 bg-gradient-to-br from-amber-50 to-white shadow-sm hover:shadow-md transition-shadow">
+              <Card className="border-amber-200 dark:border-amber-800 bg-gradient-to-br from-amber-50 to-white dark:from-amber-900/20 dark:to-gray-900 shadow-sm hover:shadow-md transition-shadow">
                 <CardContent className="p-4 flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
-                    <DollarSign className="w-6 h-6 text-amber-600" />
+                  <div className="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center flex-shrink-0">
+                    <DollarSign className="w-6 h-6 text-amber-600 dark:text-amber-400" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold text-amber-700">{totalRevenue.toFixed(2)}</p>
-                    <p className="text-xs text-gray-500">إجمالي الإيرادات (شيكل)</p>
+                    <p className="text-2xl font-bold text-amber-700 dark:text-amber-400">{totalRevenue.toFixed(2)}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{t('totalRevenueShekel')}</p>
                   </div>
                 </CardContent>
               </Card>
-              <Card className="border-rose-200 bg-gradient-to-br from-rose-50 to-white shadow-sm hover:shadow-md transition-shadow">
+              <Card className="border-rose-200 dark:border-rose-800 bg-gradient-to-br from-rose-50 to-white dark:from-rose-900/20 dark:to-gray-900 shadow-sm hover:shadow-md transition-shadow">
                 <CardContent className="p-4 flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-rose-100 flex items-center justify-center flex-shrink-0">
-                    <Timer className="w-6 h-6 text-rose-600" />
+                  <div className="w-12 h-12 rounded-xl bg-rose-100 dark:bg-rose-900/40 flex items-center justify-center flex-shrink-0">
+                    <Timer className="w-6 h-6 text-rose-600 dark:text-rose-400" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold text-rose-700">{totalMinutesUsed.toFixed(1)}</p>
-                    <p className="text-xs text-gray-500">إجمالي الدقائق المستخدمة</p>
+                    <p className="text-2xl font-bold text-rose-700 dark:text-rose-400">{totalMinutesUsed.toFixed(1)}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{t('totalMinutesUsed')}</p>
                   </div>
                 </CardContent>
               </Card>
             </div>
 
             {/* Desktop: Settings info bar */}
-            <div className="hidden md:flex bg-gradient-to-r from-cyan-50/80 to-emerald-50/80 border border-cyan-200 rounded-xl p-3 items-center justify-between mb-4">
+            <div className="hidden md:flex bg-gradient-to-r from-cyan-50/80 to-emerald-50/80 dark:from-cyan-900/20 dark:to-emerald-900/20 border border-cyan-200 dark:border-cyan-800 rounded-xl p-3 items-center justify-between mb-4">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-cyan-100 flex items-center justify-center">
-                  <Clock className="w-4 h-4 text-cyan-700" />
+                <div className="w-9 h-9 rounded-lg bg-cyan-100 dark:bg-cyan-900/40 flex items-center justify-center">
+                  <Clock className="w-4 h-4 text-cyan-700 dark:text-cyan-400" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-cyan-800">الحد المجاني: {freeMin} دقيقة/أسبوع</p>
-                  <p className="text-xs text-cyan-600">سعر الدقيقة الإضافية: {priceMin} شيكل</p>
+                  <p className="text-sm font-semibold text-cyan-800 dark:text-cyan-300">{t('freeLimitInfo')} {freeMin} {t('minutesPerWeek')}</p>
+                  <p className="text-xs text-cyan-600 dark:text-cyan-400">{t('extraPriceInfo')} {priceMin} {t('shekel')}</p>
                 </div>
               </div>
               <div className="flex items-center gap-4 text-xs">
-                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-400"></span><span className="text-gray-600">مجاني</span></div>
-                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-amber-400"></span><span className="text-gray-600">مدفوع</span></div>
-                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-rose-400"></span><span className="text-gray-600">تجاوز ({totalFamiliesOverLimit} عائلة)</span></div>
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-400"></span><span className="text-gray-600 dark:text-gray-400">{t('free')}</span></div>
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-amber-400"></span><span className="text-gray-600 dark:text-gray-400">{t('paid')}</span></div>
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-rose-400"></span><span className="text-gray-600 dark:text-gray-400">{t('overLimitFamilies')} ({totalFamiliesOverLimit} {t('familiesOverLimitCount')})</span></div>
               </div>
             </div>
           </div>
@@ -981,14 +990,14 @@ export default function Home() {
           <main className="max-w-7xl mx-auto px-3 md:px-6 pb-6">
             {loading ? (
               <div className="flex flex-col items-center justify-center py-20 gap-4">
-                <div className="w-12 h-12 rounded-full border-4 border-cyan-200 border-t-cyan-600 animate-spin"></div>
-                <p className="text-gray-500">جاري التحميل...</p>
+                <div className="w-12 h-12 rounded-full border-4 border-cyan-200 dark:border-cyan-800 border-t-cyan-600 dark:border-t-cyan-400 animate-spin"></div>
+                <p className="text-gray-500 dark:text-gray-400">{t('loading')}</p>
               </div>
             ) : families.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 gap-4">
-                <div className="w-20 h-20 rounded-full bg-cyan-50 flex items-center justify-center"><Users className="w-10 h-10 text-cyan-300" /></div>
-                <h2 className="text-lg font-semibold text-gray-700">لا توجد عائلات بعد</h2>
-                <p className="text-gray-500 text-sm">اضغط على &quot;إضافة&quot; لبدء الاستخدام</p>
+                <div className="w-20 h-20 rounded-full bg-cyan-50 dark:bg-cyan-900/20 flex items-center justify-center"><Users className="w-10 h-10 text-cyan-300 dark:text-cyan-700" /></div>
+                <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-300">{t('noFamilies')}</h2>
+                <p className="text-gray-500 dark:text-gray-400 text-sm">{t('addFamilyStart')}</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
@@ -1003,58 +1012,58 @@ export default function Home() {
                   const isExpanded = expandedFamily === family.id
 
                   return (
-                    <Card key={family.id} className={`overflow-hidden transition-all duration-300 border-2 ${isActive ? 'border-emerald-400 shadow-lg shadow-emerald-100 ring-1 ring-emerald-200' : overLimit ? 'border-amber-300 shadow-md shadow-amber-50' : 'border-gray-200 hover:border-cyan-300 hover:shadow-md hover:shadow-cyan-50'}`}>
+                    <Card key={family.id} className={`overflow-hidden transition-all duration-300 border-2 ${isActive ? 'border-emerald-400 dark:border-emerald-600 shadow-lg shadow-emerald-100 dark:shadow-emerald-900/20 ring-1 ring-emerald-200 dark:ring-emerald-800' : overLimit ? 'border-amber-300 dark:border-amber-700 shadow-md shadow-amber-50 dark:shadow-amber-900/10' : 'border-gray-200 dark:border-gray-700 hover:border-cyan-300 dark:hover:border-cyan-700 hover:shadow-md hover:shadow-cyan-50 dark:hover:shadow-cyan-900/10'}`}>
                       {isActive && <div className="h-1 bg-gradient-to-r from-cyan-500 to-emerald-500 animate-pulse" />}
                       <CardHeader className="pb-2">
                         <div className="flex items-center justify-between">
                           <CardTitle className="text-sm md:text-base flex items-center gap-2">
-                            <div className={`w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center ${isActive ? 'bg-emerald-100 text-emerald-600' : overLimit ? 'bg-amber-100 text-amber-600' : 'bg-cyan-100 text-cyan-600'}`}>
+                            <div className={`w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center ${isActive ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400' : overLimit ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400' : 'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-600 dark:text-cyan-400'}`}>
                               <Droplets className="w-3.5 h-3.5 md:w-4 md:h-4" />
                             </div>
                             <span className="truncate max-w-[100px] md:max-w-[160px] lg:max-w-[200px]">{family.name}</span>
                           </CardTitle>
                           <div className="flex items-center gap-1">
-                            {isActive && <Badge className="bg-emerald-500 text-white text-[9px] md:text-[10px] px-1.5 py-0"><span className="w-1 h-1 rounded-full bg-white animate-pulse ml-0.5"></span>نشط</Badge>}
-                            {overLimit && !isActive && <Badge variant="destructive" className="text-[9px] md:text-[10px] px-1.5 py-0">تجاوز</Badge>}
+                            {isActive && <Badge className="bg-emerald-500 text-white text-[9px] md:text-[10px] px-1.5 py-0"><span className={`w-1 h-1 rounded-full bg-white animate-pulse ${dir === 'rtl' ? 'ml-0.5' : 'mr-0.5'}`}></span>{t('active')}</Badge>}
+                            {overLimit && !isActive && <Badge variant="destructive" className="text-[9px] md:text-[10px] px-1.5 py-0">{t('overLimit')}</Badge>}
                           </div>
                         </div>
                       </CardHeader>
                       <CardContent className="space-y-3">
-                        <div className={`text-center py-3 md:py-4 rounded-xl ${isActive ? 'bg-gradient-to-br from-emerald-50 to-cyan-50 border border-emerald-200' : 'bg-gray-50 border border-gray-200'}`}>
+                        <div className={`text-center py-3 md:py-4 rounded-xl ${isActive ? 'bg-gradient-to-br from-emerald-50 to-cyan-50 dark:from-emerald-900/20 dark:to-cyan-900/20 border border-emerald-200 dark:border-emerald-800' : 'bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700'}`}>
                           <div className="text-3xl md:text-4xl font-mono font-bold tracking-wider">
-                            <span className={isActive ? 'text-emerald-700' : 'text-gray-700'}>{formatTime(timerSeconds)}</span>
+                            <span className={isActive ? 'text-emerald-700 dark:text-emerald-400' : 'text-gray-700 dark:text-gray-300'}>{formatTime(timerSeconds)}</span>
                           </div>
-                          {isActive && <p className="text-[10px] md:text-xs text-emerald-600 mt-0.5">جاري التعبئة...</p>}
+                          {isActive && <p className="text-[10px] md:text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">{t('filling')}</p>}
                         </div>
 
                         <div className="space-y-1">
                           <div className="flex justify-between text-[10px] md:text-xs">
-                            <span className="text-gray-500">الاستخدام المجاني</span>
-                            <span className={`font-medium ${overLimit ? 'text-amber-600' : 'text-gray-700'}`}>
-                              {Math.min(totalUsedMinutes, freeMin).toFixed(1)}/{freeMin} د
+                            <span className="text-gray-500 dark:text-gray-400">{t('freeUsage')}</span>
+                            <span className={`font-medium ${overLimit ? 'text-amber-600 dark:text-amber-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                              {Math.min(totalUsedMinutes, freeMin).toFixed(1)}/{freeMin} {t('minShort')}
                             </span>
                           </div>
                           <Progress value={usagePercent} className={`h-2 ${overLimit ? '[&>div]:bg-amber-500' : '[&>div]:bg-gradient-to-r [&>div]:from-cyan-500 [&>div]:to-emerald-500'}`} />
                         </div>
 
                         <div className="grid grid-cols-2 gap-1.5 md:gap-2">
-                          <div className="bg-white rounded-lg p-2 border border-gray-100 text-center">
-                            <p className="text-[9px] md:text-[10px] text-gray-500">المتبقي مجاناً</p>
-                            <p className={`text-xs md:text-sm font-bold ${freeRemaining > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                              {freeRemaining > 0 ? `${freeRemaining.toFixed(1)} د` : 'انتهى'}
+                          <div className="bg-white dark:bg-gray-800 rounded-lg p-2 border border-gray-100 dark:border-gray-700 text-center">
+                            <p className="text-[9px] md:text-[10px] text-gray-500 dark:text-gray-400">{t('freeRemaining')}</p>
+                            <p className={`text-xs md:text-sm font-bold ${freeRemaining > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                              {freeRemaining > 0 ? `${freeRemaining.toFixed(1)} ${t('minShort')}` : t('exhausted')}
                             </p>
                           </div>
-                          <div className="bg-white rounded-lg p-2 border border-gray-100 text-center">
-                            <p className="text-[9px] md:text-[10px] text-gray-500">المبلغ المستحق</p>
-                            <p className={`text-xs md:text-sm font-bold ${cost > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>{cost.toFixed(2)} شيكل</p>
+                          <div className="bg-white dark:bg-gray-800 rounded-lg p-2 border border-gray-100 dark:border-gray-700 text-center">
+                            <p className="text-[9px] md:text-[10px] text-gray-500 dark:text-gray-400">{t('amountDue')}</p>
+                            <p className={`text-xs md:text-sm font-bold ${cost > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>{cost.toFixed(2)} {t('shekel')}</p>
                           </div>
                         </div>
 
                         {paidMinutes > 0 && (
-                          <div className="bg-amber-50 rounded-lg p-2 border border-amber-200 text-center">
-                            <p className="text-[10px] md:text-xs text-amber-700">
-                              <AlertCircle className="w-2.5 h-2.5 inline ml-0.5" />
-                              إضافي: <span className="font-bold">{paidMinutes.toFixed(1)}</span> د × {priceMin} شيكل
+                          <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-2 border border-amber-200 dark:border-amber-800 text-center">
+                            <p className="text-[10px] md:text-xs text-amber-700 dark:text-amber-400">
+                              <AlertCircle className={`w-2.5 h-2.5 inline ${dir === 'rtl' ? 'ml-0.5' : 'mr-0.5'}`} />
+                              {t('extraInfo')}: <span className="font-bold">{paidMinutes.toFixed(1)}</span> {t('minShort')} × {priceMin} {t('shekel')}
                             </p>
                           </div>
                         )}
@@ -1064,20 +1073,20 @@ export default function Home() {
                         <div className="flex gap-1.5 md:gap-2">
                           {isActive ? (
                             <Button onClick={() => handleStopSession(family.id, family.activeSessionId!)} className="flex-1 gap-1.5 bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600 text-white shadow-sm text-xs h-8 md:h-9">
-                              <Pause className="w-3.5 h-3.5" />إيقاف
+                              <Pause className="w-3.5 h-3.5" />{t('stop')}
                             </Button>
                           ) : (
                             <Button onClick={() => handleStartSession(family.id)} className="flex-1 gap-1.5 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white shadow-sm text-xs h-8 md:h-9">
-                              <Play className="w-3.5 h-3.5" />بدء
+                              <Play className="w-3.5 h-3.5" />{t('start')}
                             </Button>
                           )}
-                          <Button variant="outline" size="sm" onClick={() => openEditFamily(family)} className="gap-1 border-cyan-300 text-cyan-700 hover:text-cyan-800 hover:bg-cyan-50 hover:border-cyan-400 bg-cyan-50/50 h-8 md:h-9" title="تعديل">
+                          <Button variant="outline" size="sm" onClick={() => openEditFamily(family)} className="gap-1 border-cyan-300 dark:border-cyan-700 text-cyan-700 dark:text-cyan-400 hover:text-cyan-800 dark:hover:text-cyan-300 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 hover:border-cyan-400 dark:hover:border-cyan-600 bg-cyan-50/50 dark:bg-cyan-900/10 h-8 md:h-9" title={t('edit')}>
                             <Pencil className="w-3.5 h-3.5" />
                           </Button>
-                          <Button variant="outline" size="sm" onClick={() => resetWeekly(family.id, family.name)} className="gap-1 border-amber-300 text-amber-700 hover:text-amber-800 hover:bg-amber-50 hover:border-amber-400 bg-amber-50/50 h-8 md:h-9" title="إعادة تعيين">
+                          <Button variant="outline" size="sm" onClick={() => resetWeekly(family.id, family.name)} className="gap-1 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:border-amber-400 dark:hover:border-amber-600 bg-amber-50/50 dark:bg-amber-900/10 h-8 md:h-9" title={t('resetUsage')}>
                             <RotateCcw className="w-3.5 h-3.5" />
                           </Button>
-                          <Button variant="outline" size="sm" onClick={() => deleteFamily(family.id, family.name)} className="gap-1 border-red-300 text-red-700 hover:text-red-800 hover:bg-red-50 hover:border-red-400 bg-red-50/50 h-8 md:h-9" title="حذف">
+                          <Button variant="outline" size="sm" onClick={() => deleteFamily(family.id, family.name)} className="gap-1 border-red-300 dark:border-red-700 text-red-700 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-400 dark:hover:border-red-600 bg-red-50/50 dark:bg-red-900/10 h-8 md:h-9" title={t('delete')}>
                             <Trash2 className="w-3.5 h-3.5" />
                           </Button>
                         </div>
@@ -1087,21 +1096,21 @@ export default function Home() {
                           <div>
                             <button
                               onClick={() => setExpandedFamily(isExpanded ? null : family.id)}
-                              className="w-full flex items-center justify-center gap-1 text-[10px] md:text-xs text-cyan-600 hover:text-cyan-700 py-1 transition-colors"
+                              className="w-full flex items-center justify-center gap-1 text-[10px] md:text-xs text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 py-1 transition-colors"
                             >
                               <History className="w-3 h-3" />
-                              {isExpanded ? 'إخفاء السجل' : `عرض السجل (${family.sessions.filter((s) => s.endTime).length})`}
+                              {isExpanded ? t('hideLog') : `${t('showLog')} (${family.sessions.filter((s) => s.endTime).length})`}
                               {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                             </button>
                             {isExpanded && (
-                              <div className="mt-2 rounded-xl border border-gray-200 overflow-hidden">
+                              <div className="mt-2 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
                                 <div className="overflow-x-auto max-h-40 overflow-y-auto">
                                   <table className="w-full text-xs">
                                     <thead>
-                                      <tr className="bg-gray-50 border-b border-gray-200">
-                                        <th className="px-2 py-1.5 text-right font-medium text-gray-600">من</th>
-                                        <th className="px-2 py-1.5 text-right font-medium text-gray-600">إلى</th>
-                                        <th className="px-2 py-1.5 text-right font-medium text-gray-600">المدة</th>
+                                      <tr className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                                        <th className={`px-2 py-1.5 font-medium text-gray-600 dark:text-gray-400 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{t('from')}</th>
+                                        <th className={`px-2 py-1.5 font-medium text-gray-600 dark:text-gray-400 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{t('to')}</th>
+                                        <th className={`px-2 py-1.5 font-medium text-gray-600 dark:text-gray-400 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{t('duration')}</th>
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -1110,10 +1119,10 @@ export default function Home() {
                                         .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
                                         .slice(0, 5)
                                         .map((session) => (
-                                          <tr key={session.id} className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50">
-                                            <td className="px-2 py-1.5 text-gray-700 font-mono whitespace-nowrap">{formatTimeOfDay(session.startTime)}</td>
-                                            <td className="px-2 py-1.5 text-gray-700 font-mono whitespace-nowrap">{session.endTime ? formatTimeOfDay(session.endTime) : '-'}</td>
-                                            <td className="px-2 py-1.5 font-mono font-medium">{formatTime(session.duration)}</td>
+                                          <tr key={session.id} className="border-b border-gray-100 dark:border-gray-800 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-800">
+                                            <td className="px-2 py-1.5 text-gray-700 dark:text-gray-300 font-mono whitespace-nowrap">{formatTimeOfDay(session.startTime)}</td>
+                                            <td className="px-2 py-1.5 text-gray-700 dark:text-gray-300 font-mono whitespace-nowrap">{session.endTime ? formatTimeOfDay(session.endTime) : '-'}</td>
+                                            <td className="px-2 py-1.5 font-mono font-medium text-gray-700 dark:text-gray-300">{formatTime(session.duration)}</td>
                                           </tr>
                                         ))}
                                     </tbody>
@@ -1138,74 +1147,74 @@ export default function Home() {
         <main className="max-w-7xl mx-auto px-3 md:px-6 py-3 md:py-4">
           {/* Mobile: 2x2 Stats grid */}
           <div className="grid grid-cols-2 gap-2 mb-4 md:hidden">
-            <Card className="border-cyan-200 bg-gradient-to-br from-cyan-50 to-white">
+            <Card className="border-cyan-200 dark:border-cyan-800 bg-gradient-to-br from-cyan-50 to-white dark:from-cyan-900/20 dark:to-gray-900">
               <CardContent className="p-3 text-center">
-                <Users className="w-5 h-5 text-cyan-600 mx-auto mb-0.5" />
-                <p className="text-xl font-bold text-cyan-700">{families.length}</p>
-                <p className="text-[10px] text-gray-500">عدد العائلات</p>
+                <Users className="w-5 h-5 text-cyan-600 dark:text-cyan-400 mx-auto mb-0.5" />
+                <p className="text-xl font-bold text-cyan-700 dark:text-cyan-400">{families.length}</p>
+                <p className="text-[10px] text-gray-500 dark:text-gray-400">{t('numberOfFamilies')}</p>
               </CardContent>
             </Card>
-            <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50 to-white">
+            <Card className="border-emerald-200 dark:border-emerald-800 bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-900/20 dark:to-gray-900">
               <CardContent className="p-3 text-center">
-                <Timer className="w-5 h-5 text-emerald-600 mx-auto mb-0.5" />
-                <p className="text-xl font-bold text-emerald-700">{totalMinutesUsed.toFixed(1)}</p>
-                <p className="text-[10px] text-gray-500">إجمالي الدقائق</p>
+                <Timer className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mx-auto mb-0.5" />
+                <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400">{totalMinutesUsed.toFixed(1)}</p>
+                <p className="text-[10px] text-gray-500 dark:text-gray-400">{t('totalMinutes')}</p>
               </CardContent>
             </Card>
-            <Card className="border-amber-200 bg-gradient-to-br from-amber-50 to-white">
+            <Card className="border-amber-200 dark:border-amber-800 bg-gradient-to-br from-amber-50 to-white dark:from-amber-900/20 dark:to-gray-900">
               <CardContent className="p-3 text-center">
-                <Coins className="w-5 h-5 text-amber-600 mx-auto mb-0.5" />
-                <p className="text-xl font-bold text-amber-700">{totalRevenue.toFixed(2)}</p>
-                <p className="text-[10px] text-gray-500">إجمالي المبلغ (شيكل)</p>
+                <Coins className="w-5 h-5 text-amber-600 dark:text-amber-400 mx-auto mb-0.5" />
+                <p className="text-xl font-bold text-amber-700 dark:text-amber-400">{totalRevenue.toFixed(2)}</p>
+                <p className="text-[10px] text-gray-500 dark:text-gray-400">{t('totalAmountShekel')}</p>
               </CardContent>
             </Card>
-            <Card className="border-rose-200 bg-gradient-to-br from-rose-50 to-white">
+            <Card className="border-rose-200 dark:border-rose-800 bg-gradient-to-br from-rose-50 to-white dark:from-rose-900/20 dark:to-gray-900">
               <CardContent className="p-3 text-center">
-                <AlertCircle className="w-5 h-5 text-rose-600 mx-auto mb-0.5" />
-                <p className="text-xl font-bold text-rose-700">{totalFamiliesOverLimit}</p>
-                <p className="text-[10px] text-gray-500">تجاوزوا الحد</p>
+                <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400 mx-auto mb-0.5" />
+                <p className="text-xl font-bold text-rose-700 dark:text-rose-400">{totalFamiliesOverLimit}</p>
+                <p className="text-[10px] text-gray-500 dark:text-gray-400">{t('familiesOverLimit')}</p>
               </CardContent>
             </Card>
           </div>
 
           {/* Desktop: Stats bar inline */}
           <div className="hidden md:grid grid-cols-4 gap-4 mb-4">
-            <Card className="border-cyan-200 bg-gradient-to-br from-cyan-50 to-white shadow-sm">
+            <Card className="border-cyan-200 dark:border-cyan-800 bg-gradient-to-br from-cyan-50 to-white dark:from-cyan-900/20 dark:to-gray-900 shadow-sm">
               <CardContent className="p-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-cyan-100 flex items-center justify-center"><Users className="w-5 h-5 text-cyan-600" /></div>
-                <div><p className="text-xl font-bold text-cyan-700">{families.length}</p><p className="text-xs text-gray-500">عدد العائلات</p></div>
+                <div className="w-10 h-10 rounded-xl bg-cyan-100 dark:bg-cyan-900/40 flex items-center justify-center"><Users className="w-5 h-5 text-cyan-600 dark:text-cyan-400" /></div>
+                <div><p className="text-xl font-bold text-cyan-700 dark:text-cyan-400">{families.length}</p><p className="text-xs text-gray-500 dark:text-gray-400">{t('numberOfFamilies')}</p></div>
               </CardContent>
             </Card>
-            <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50 to-white shadow-sm">
+            <Card className="border-emerald-200 dark:border-emerald-800 bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-900/20 dark:to-gray-900 shadow-sm">
               <CardContent className="p-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center"><Timer className="w-5 h-5 text-emerald-600" /></div>
-                <div><p className="text-xl font-bold text-emerald-700">{totalMinutesUsed.toFixed(1)}</p><p className="text-xs text-gray-500">إجمالي الدقائق</p></div>
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center"><Timer className="w-5 h-5 text-emerald-600 dark:text-emerald-400" /></div>
+                <div><p className="text-xl font-bold text-emerald-700 dark:text-emerald-400">{totalMinutesUsed.toFixed(1)}</p><p className="text-xs text-gray-500 dark:text-gray-400">{t('totalMinutes')}</p></div>
               </CardContent>
             </Card>
-            <Card className="border-amber-200 bg-gradient-to-br from-amber-50 to-white shadow-sm">
+            <Card className="border-amber-200 dark:border-amber-800 bg-gradient-to-br from-amber-50 to-white dark:from-amber-900/20 dark:to-gray-900 shadow-sm">
               <CardContent className="p-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center"><Coins className="w-5 h-5 text-amber-600" /></div>
-                <div><p className="text-xl font-bold text-amber-700">{totalRevenue.toFixed(2)}</p><p className="text-xs text-gray-500">إجمالي المبلغ (شيكل)</p></div>
+                <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center"><Coins className="w-5 h-5 text-amber-600 dark:text-amber-400" /></div>
+                <div><p className="text-xl font-bold text-amber-700 dark:text-amber-400">{totalRevenue.toFixed(2)}</p><p className="text-xs text-gray-500 dark:text-gray-400">{t('totalAmountShekel')}</p></div>
               </CardContent>
             </Card>
-            <Card className="border-rose-200 bg-gradient-to-br from-rose-50 to-white shadow-sm">
+            <Card className="border-rose-200 dark:border-rose-800 bg-gradient-to-br from-rose-50 to-white dark:from-rose-900/20 dark:to-gray-900 shadow-sm">
               <CardContent className="p-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center"><AlertCircle className="w-5 h-5 text-rose-600" /></div>
-                <div><p className="text-xl font-bold text-rose-700">{totalFamiliesOverLimit}</p><p className="text-xs text-gray-500">تجاوزوا الحد</p></div>
+                <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-900/40 flex items-center justify-center"><AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400" /></div>
+                <div><p className="text-xl font-bold text-rose-700 dark:text-rose-400">{totalFamiliesOverLimit}</p><p className="text-xs text-gray-500 dark:text-gray-400">{t('familiesOverLimit')}</p></div>
               </CardContent>
             </Card>
           </div>
 
           {/* Search & Filter */}
-          <Card className="mb-4 border-gray-200">
+          <Card className="mb-4 border-gray-200 dark:border-gray-700">
             <CardContent className="p-3">
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative flex-1 min-w-[150px]">
-                  <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                  <Input placeholder="بحث..." value={logSearch} onChange={(e) => setLogSearch(e.target.value)} className="pr-8 text-right text-xs h-8" />
+                  <Search className={`absolute ${dir === 'rtl' ? 'right-2.5' : 'left-2.5'} top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400`} />
+                  <Input placeholder={t('search')} value={logSearch} onChange={(e) => setLogSearch(e.target.value)} className={`${dir === 'rtl' ? 'pr-8' : 'pl-8'} ${dir === 'rtl' ? 'text-right' : 'text-left'} text-xs h-8`} />
                 </div>
                 <div className="flex items-center gap-1 flex-wrap">
-                  <Button variant={selectedLogFamily === null ? 'default' : 'outline'} size="sm" onClick={() => setSelectedLogFamily(null)} className={`text-[10px] h-7 ${selectedLogFamily === null ? 'bg-cyan-600 text-white' : ''}`}>الكل</Button>
+                  <Button variant={selectedLogFamily === null ? 'default' : 'outline'} size="sm" onClick={() => setSelectedLogFamily(null)} className={`text-[10px] h-7 ${selectedLogFamily === null ? 'bg-cyan-600 text-white' : ''}`}>{t('all')}</Button>
                   {families.map((f) => (
                     <Button key={f.id} variant={selectedLogFamily === f.id ? 'default' : 'outline'} size="sm" onClick={() => setSelectedLogFamily(f.id)} className={`text-[10px] h-7 ${selectedLogFamily === f.id ? 'bg-cyan-600 text-white' : ''}`}>{f.name}</Button>
                   ))}
@@ -1223,52 +1232,52 @@ export default function Home() {
               const isActive = !!family.activeSessionId
 
               return (
-                <Card key={family.id} className={`overflow-hidden ${overLimit ? 'border-amber-300' : 'border-gray-200'} hover:shadow-md transition-shadow`}>
-                  <CardHeader className="pb-2 bg-gradient-to-l from-gray-50 to-white">
+                <Card key={family.id} className={`overflow-hidden ${overLimit ? 'border-amber-300 dark:border-amber-700' : 'border-gray-200 dark:border-gray-700'} hover:shadow-md transition-shadow`}>
+                  <CardHeader className={`pb-2 bg-gradient-to-l ${dir === 'rtl' ? 'from-gray-50 to-white dark:from-gray-800 dark:to-gray-900' : 'from-white to-gray-50 dark:from-gray-900 dark:to-gray-800'}`}>
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <div className="flex items-center gap-2">
-                        <div className={`w-8 h-8 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${overLimit ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                        <div className={`w-8 h-8 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${overLimit ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400' : 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400'}`}>
                           <Droplets className="w-4 h-4 md:w-5 md:h-5" />
                         </div>
                         <div>
                           <CardTitle className="text-sm md:text-base">{family.name}</CardTitle>
-                          <p className="text-[10px] md:text-xs text-gray-500">
-                            <CalendarDays className="w-2.5 h-2.5 inline ml-0.5" />
+                          <p className="text-[10px] md:text-xs text-gray-500 dark:text-gray-400">
+                            <CalendarDays className={`w-2.5 h-2.5 inline ${dir === 'rtl' ? 'ml-0.5' : 'mr-0.5'}`} />
                             {formatDate(family.createdAt)}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <Button variant="outline" size="sm" onClick={() => openEditFamily(family)} className="gap-1 border-cyan-300 text-cyan-700 hover:text-cyan-800 hover:bg-cyan-50 hover:border-cyan-400 bg-cyan-50/50 font-semibold h-7 text-[10px]">
+                        <Button variant="outline" size="sm" onClick={() => openEditFamily(family)} className="gap-1 border-cyan-300 dark:border-cyan-700 text-cyan-700 dark:text-cyan-400 hover:text-cyan-800 dark:hover:text-cyan-300 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 hover:border-cyan-400 dark:hover:border-cyan-600 bg-cyan-50/50 dark:bg-cyan-900/10 font-semibold h-7 text-[10px]">
                           <Pencil className="w-3 h-3" />
-                          <span className="hidden sm:inline">تعديل</span>
+                          <span className="hidden sm:inline">{t('edit')}</span>
                         </Button>
-                        {isActive && <Badge className="bg-emerald-500 text-white text-[9px] gap-0.5"><span className="w-1 h-1 rounded-full bg-white animate-pulse"></span>قيد التعبئة</Badge>}
-                        {overLimit ? <Badge variant="destructive" className="text-[9px]">تجاوز</Badge> : <Badge className="bg-emerald-100 text-emerald-700 text-[9px] hover:bg-emerald-100">ضمن الحد</Badge>}
+                        {isActive && <Badge className="bg-emerald-500 text-white text-[9px] gap-0.5"><span className="w-1 h-1 rounded-full bg-white animate-pulse"></span>{t('fillingInProgress')}</Badge>}
+                        {overLimit ? <Badge variant="destructive" className="text-[9px]">{t('overLimit')}</Badge> : <Badge className="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 text-[9px] hover:bg-emerald-100 dark:hover:bg-emerald-900/40">{t('withinLimit')}</Badge>}
                       </div>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                      <div className="bg-cyan-50 rounded-lg p-2 text-center border border-cyan-100"><p className="text-[9px] md:text-[10px] text-cyan-600">إجمالي</p><p className="text-sm font-bold text-cyan-700">{totalMinutes.toFixed(1)}</p></div>
-                      <div className="bg-emerald-50 rounded-lg p-2 text-center border border-emerald-100"><p className="text-[9px] md:text-[10px] text-emerald-600">المجاني</p><p className="text-sm font-bold text-emerald-700">{freeMinutesVal.toFixed(1)}</p></div>
-                      <div className="bg-amber-50 rounded-lg p-2 text-center border border-amber-100"><p className="text-[9px] md:text-[10px] text-amber-600">المدفوع</p><p className="text-sm font-bold text-amber-700">{paidMinutesVal.toFixed(1)}</p></div>
-                      <div className="bg-rose-50 rounded-lg p-2 text-center border border-rose-100"><p className="text-[9px] md:text-[10px] text-rose-600">المبلغ</p><p className="text-sm font-bold text-rose-700">{cost.toFixed(2)}</p></div>
-                      <div className="bg-gray-50 rounded-lg p-2 text-center border border-gray-200 col-span-2 md:col-span-1"><p className="text-[9px] md:text-[10px] text-gray-500">الجلسات</p><p className="text-sm font-bold text-gray-700">{familySessions.length}</p></div>
+                      <div className="bg-cyan-50 dark:bg-cyan-900/20 rounded-lg p-2 text-center border border-cyan-100 dark:border-cyan-800"><p className="text-[9px] md:text-[10px] text-cyan-600 dark:text-cyan-400">{t('total')}</p><p className="text-sm font-bold text-cyan-700 dark:text-cyan-400">{totalMinutes.toFixed(1)}</p></div>
+                      <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-2 text-center border border-emerald-100 dark:border-emerald-800"><p className="text-[9px] md:text-[10px] text-emerald-600 dark:text-emerald-400">{t('free')}</p><p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">{freeMinutesVal.toFixed(1)}</p></div>
+                      <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-2 text-center border border-amber-100 dark:border-amber-800"><p className="text-[9px] md:text-[10px] text-amber-600 dark:text-amber-400">{t('paid')}</p><p className="text-sm font-bold text-amber-700 dark:text-amber-400">{paidMinutesVal.toFixed(1)}</p></div>
+                      <div className="bg-rose-50 dark:bg-rose-900/20 rounded-lg p-2 text-center border border-rose-100 dark:border-rose-800"><p className="text-[9px] md:text-[10px] text-rose-600 dark:text-rose-400">{t('cost')}</p><p className="text-sm font-bold text-rose-700 dark:text-rose-400">{cost.toFixed(2)}</p></div>
+                      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-2 text-center border border-gray-200 dark:border-gray-700 col-span-2 md:col-span-1"><p className="text-[9px] md:text-[10px] text-gray-500 dark:text-gray-400">{t('sessions')}</p><p className="text-sm font-bold text-gray-700 dark:text-gray-300">{familySessions.length}</p></div>
                     </div>
 
                     <div className="space-y-1">
                       <div className="flex justify-between text-[10px] md:text-xs">
-                        <span className="text-gray-500">استخدام الحد المجاني</span>
-                        <span className={`font-medium ${overLimit ? 'text-amber-600' : 'text-gray-700'}`}>{Math.min(totalMinutes, freeMin).toFixed(1)}/{freeMin} د</span>
+                        <span className="text-gray-500 dark:text-gray-400">{t('freeLimitUsage')}</span>
+                        <span className={`font-medium ${overLimit ? 'text-amber-600 dark:text-amber-400' : 'text-gray-700 dark:text-gray-300'}`}>{Math.min(totalMinutes, freeMin).toFixed(1)}/{freeMin} {t('minShort')}</span>
                       </div>
                       <Progress value={getUsagePercentage(family)} className={`h-2 ${overLimit ? '[&>div]:bg-amber-500' : '[&>div]:bg-gradient-to-r [&>div]:from-cyan-500 [&>div]:to-emerald-500'}`} />
                     </div>
 
                     {familySessions.length > 0 && (
                       <div>
-                        <h4 className="text-xs font-semibold text-gray-700 mb-1.5 flex items-center gap-1">
-                          <History className="w-3.5 h-3.5 text-cyan-600" />سجل الجلسات
+                        <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5 flex items-center gap-1">
+                          <History className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />{t('fillingLogTitle')}
                         </h4>
                         {/* Mobile: Card list */}
                         <div className="md:hidden space-y-2">
@@ -1282,12 +1291,12 @@ export default function Home() {
                               const sessionCost = paidInSession * priceMin
 
                               return (
-                                <div key={session.id} className="bg-gray-50 rounded-lg p-2.5 border border-gray-200">
+                                <div key={session.id} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-2.5 border border-gray-200 dark:border-gray-700">
                                   <div className="flex items-center justify-between mb-1">
-                                    <span className="text-[10px] text-gray-500">جلسة #{idx + 1}</span>
-                                    {sessionCost > 0 ? <Badge variant="destructive" className="text-[9px]">{sessionCost.toFixed(2)} شيكل</Badge> : <Badge className="bg-emerald-100 text-emerald-700 text-[9px] hover:bg-emerald-100">مجاني</Badge>}
+                                    <span className="text-[10px] text-gray-500 dark:text-gray-400">{t('sessionNum')} #{idx + 1}</span>
+                                    {sessionCost > 0 ? <Badge variant="destructive" className="text-[9px]">{sessionCost.toFixed(2)} {t('shekel')}</Badge> : <Badge className="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 text-[9px] hover:bg-emerald-100 dark:hover:bg-emerald-900/40">{t('free')}</Badge>}
                                   </div>
-                                  <div className="flex items-center justify-between text-xs text-gray-600">
+                                  <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-400">
                                     <span className="font-mono">{formatTimeOfDay(session.startTime)}</span>
                                     <span>→</span>
                                     <span className="font-mono">{session.endTime ? formatTimeOfDay(session.endTime) : '-'}</span>
@@ -1298,17 +1307,17 @@ export default function Home() {
                             })}
                         </div>
                         {/* Desktop: Table view */}
-                        <div className="hidden md:block rounded-xl border border-gray-200 overflow-hidden">
+                        <div className="hidden md:block rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
                           <div className="overflow-x-auto">
                             <table className="w-full text-xs">
                               <thead>
-                                <tr className="bg-gray-50 border-b border-gray-200">
-                                  <th className="px-3 py-2 text-right font-medium text-gray-600">#</th>
-                                  <th className="px-3 py-2 text-right font-medium text-gray-600">التاريخ</th>
-                                  <th className="px-3 py-2 text-right font-medium text-gray-600">من</th>
-                                  <th className="px-3 py-2 text-right font-medium text-gray-600">إلى</th>
-                                  <th className="px-3 py-2 text-right font-medium text-gray-600">المدة</th>
-                                  <th className="px-3 py-2 text-right font-medium text-gray-600">التكلفة</th>
+                                <tr className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                                  <th className={`px-3 py-2 font-medium text-gray-600 dark:text-gray-400 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>#</th>
+                                  <th className={`px-3 py-2 font-medium text-gray-600 dark:text-gray-400 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{t('date')}</th>
+                                  <th className={`px-3 py-2 font-medium text-gray-600 dark:text-gray-400 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{t('from')}</th>
+                                  <th className={`px-3 py-2 font-medium text-gray-600 dark:text-gray-400 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{t('to')}</th>
+                                  <th className={`px-3 py-2 font-medium text-gray-600 dark:text-gray-400 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{t('duration')}</th>
+                                  <th className={`px-3 py-2 font-medium text-gray-600 dark:text-gray-400 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{t('costColumn')}</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -1320,17 +1329,17 @@ export default function Home() {
                                   const sessionCost = paidInSession * priceMin
 
                                   return (
-                                    <tr key={session.id} className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50 transition-colors">
-                                      <td className="px-3 py-2 text-gray-500">{idx + 1}</td>
-                                      <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{formatDate(session.startTime)}</td>
-                                      <td className="px-3 py-2 text-gray-700 font-mono">{formatTimeOfDay(session.startTime)}</td>
-                                      <td className="px-3 py-2 text-gray-700 font-mono">{session.endTime ? formatTimeOfDay(session.endTime) : '-'}</td>
+                                    <tr key={session.id} className="border-b border-gray-100 dark:border-gray-800 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                                      <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{idx + 1}</td>
+                                      <td className="px-3 py-2 text-gray-700 dark:text-gray-300 whitespace-nowrap">{formatDate(session.startTime)}</td>
+                                      <td className="px-3 py-2 text-gray-700 dark:text-gray-300 font-mono">{formatTimeOfDay(session.startTime)}</td>
+                                      <td className="px-3 py-2 text-gray-700 dark:text-gray-300 font-mono">{session.endTime ? formatTimeOfDay(session.endTime) : '-'}</td>
                                       <td className="px-3 py-2">
-                                        <span className="font-mono font-medium">{formatTime(session.duration)}</span>
-                                        <span className="text-gray-400 mr-0.5">({sessionMinutes.toFixed(1)}د)</span>
+                                        <span className="font-mono font-medium text-gray-700 dark:text-gray-300">{formatTime(session.duration)}</span>
+                                        <span className={`text-gray-400 dark:text-gray-500 ${dir === 'rtl' ? 'mr-0.5' : 'ml-0.5'}`}>({sessionMinutes.toFixed(1)}{t('minShort')})</span>
                                       </td>
                                       <td className="px-3 py-2">
-                                        {sessionCost > 0 ? <Badge variant="destructive" className="text-[9px]">{sessionCost.toFixed(2)}</Badge> : <Badge className="bg-emerald-100 text-emerald-700 text-[9px] hover:bg-emerald-100">مجاني</Badge>}
+                                        {sessionCost > 0 ? <Badge variant="destructive" className="text-[9px]">{sessionCost.toFixed(2)}</Badge> : <Badge className="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 text-[9px] hover:bg-emerald-100 dark:hover:bg-emerald-900/40">{t('free')}</Badge>}
                                       </td>
                                     </tr>
                                   )
@@ -1348,7 +1357,7 @@ export default function Home() {
           </div>
 
           <footer className="mt-6 pb-4">
-            <div className="text-center text-[10px] md:text-xs text-gray-400">نظام حساب تعبئة المياه - سجل التعبئة</div>
+            <div className="text-center text-[10px] md:text-xs text-gray-400 dark:text-gray-500">{t('fillingLogFooter')}</div>
           </footer>
         </main>
       )}

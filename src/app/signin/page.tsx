@@ -8,9 +8,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Droplets, Mail, Lock, User, Eye, EyeOff } from 'lucide-react'
+import { useLanguage } from '@/components/language-provider'
+import { ThemeLanguageToggle } from '@/components/theme-language-toggle'
 
 export default function SignInPage() {
   const router = useRouter()
+  const { t, locale, dir } = useLanguage()
   const [isRegister, setIsRegister] = useState(false)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -43,14 +46,12 @@ export default function SignInPage() {
         })
         const data = await res.json()
         if (!res.ok) {
-          setError(data.error || 'حدث خطأ في إنشاء الحساب')
+          setError(data.error || t('registrationError'))
           return
         }
 
-        // Check if this was a password-linking operation (Google account existed)
         if (data.message && data.message.includes('ربط')) {
-          setSuccess(data.message)
-          // Auto sign in after linking password
+          setSuccess(t('passwordLinked'))
           const result = await signIn('credentials', {
             email,
             password,
@@ -60,12 +61,11 @@ export default function SignInPage() {
             router.push('/')
           } else {
             setIsRegister(false)
-            setSuccess('تم ربط كلمة المرور! يمكنك الآن تسجيل الدخول')
+            setSuccess(t('passwordLinked'))
           }
           return
         }
 
-        // After registration, sign in automatically
         const result = await signIn('credentials', {
           email,
           password,
@@ -74,7 +74,7 @@ export default function SignInPage() {
         if (result?.ok) {
           router.push('/')
         } else {
-          setError('تم إنشاء الحساب، يرجى تسجيل الدخول')
+          setError(locale === 'ar' ? 'تم إنشاء الحساب، يرجى تسجيل الدخول' : 'Account created, please sign in')
           setIsRegister(false)
         }
       } else {
@@ -84,13 +84,13 @@ export default function SignInPage() {
           redirect: false,
         })
         if (result?.error) {
-          setError('البريد الإلكتروني أو كلمة المرور غير صحيحة')
+          setError(t('invalidCredentials'))
         } else {
           router.push('/')
         }
       }
     } catch {
-      setError('حدث خطأ في الاتصال')
+      setError(t('connectionError'))
     } finally {
       setLoading(false)
     }
@@ -101,36 +101,41 @@ export default function SignInPage() {
   }
 
   return (
-    <div dir="rtl" className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-emerald-50 flex items-center justify-center p-4">
+    <div dir={dir} className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-emerald-50 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center shadow-xl shadow-cyan-200 mx-auto mb-4">
-            <Droplets className="w-10 h-10 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-gray-800">تعبئة المياه</h1>
-          <p className="text-sm text-gray-500 mt-1">إدارة استهلاك المياه للعائلات</p>
+        {/* Theme & Language Toggle */}
+        <div className="flex justify-end mb-4">
+          <ThemeLanguageToggle />
         </div>
 
-        <Card className="border-cyan-200 shadow-xl shadow-cyan-100/50">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center shadow-xl shadow-cyan-200 dark:shadow-cyan-900/30 mx-auto mb-4">
+            <Droplets className="w-10 h-10 text-white" />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">{t('appName')}</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t('appDesc')}</p>
+        </div>
+
+        <Card className="border-cyan-200 dark:border-gray-700 shadow-xl shadow-cyan-100/50 dark:shadow-gray-900/50 bg-white dark:bg-gray-900">
           <CardHeader className="pb-4">
-            <CardTitle className="text-center text-lg">
-              {isRegister ? 'إنشاء حساب جديد' : 'تسجيل الدخول'}
+            <CardTitle className="text-center text-lg dark:text-gray-100">
+              {isRegister ? t('signUp') : t('signIn')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               {isRegister && (
                 <div className="space-y-2">
-                  <Label htmlFor="name">الاسم</Label>
+                  <Label htmlFor="name" className="dark:text-gray-300">{t('name')}</Label>
                   <div className="relative">
-                    <User className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <User className={`absolute ${dir === 'rtl' ? 'right-3' : 'left-3'} top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400`} />
                     <Input
                       id="name"
-                      placeholder="أدخل اسمك"
+                      placeholder={t('enterName')}
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="pr-10 text-right"
+                      className={`${dir === 'rtl' ? 'pr-10' : 'pl-10'} ${dir === 'rtl' ? 'text-right' : 'text-left'} dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100`}
                       required={isRegister}
                     />
                   </div>
@@ -138,16 +143,16 @@ export default function SignInPage() {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="email">البريد الإلكتروني</Label>
+                <Label htmlFor="email" className="dark:text-gray-300">{t('email')}</Label>
                 <div className="relative">
-                  <Mail className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Mail className={`absolute ${dir === 'rtl' ? 'right-3' : 'left-3'} top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400`} />
                   <Input
                     id="email"
                     type="email"
                     placeholder="example@email.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="pr-10 text-right"
+                    className={`${dir === 'rtl' ? 'pr-10' : 'pl-10'} ${dir === 'rtl' ? 'text-right' : 'text-left'} dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100`}
                     dir="ltr"
                     required
                   />
@@ -155,16 +160,16 @@ export default function SignInPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">كلمة المرور</Label>
+                <Label htmlFor="password" className="dark:text-gray-300">{t('password')}</Label>
                 <div className="relative">
-                  <Lock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Lock className={`absolute ${dir === 'rtl' ? 'right-3' : 'left-3'} top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400`} />
                   <Input
                     id="password"
                     type={showPassword ? 'text' : 'password'}
-                    placeholder={isRegister ? '6 أحرف على الأقل' : 'أدخل كلمة المرور'}
+                    placeholder={isRegister ? t('passwordMin') : t('enterPassword')}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="pr-10 pl-10 text-right"
+                    className={`${dir === 'rtl' ? 'pr-10 pl-10' : 'pl-10 pr-10'} ${dir === 'rtl' ? 'text-right' : 'text-left'} dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100`}
                     dir="ltr"
                     required
                     minLength={6}
@@ -172,7 +177,7 @@ export default function SignInPage() {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    className={`absolute ${dir === 'rtl' ? 'left-3' : 'right-3'} top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300`}
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -180,13 +185,13 @@ export default function SignInPage() {
               </div>
 
               {error && (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 text-center">
+                <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl p-3 text-sm text-red-700 dark:text-red-400 text-center">
                   {error}
                 </div>
               )}
 
               {success && (
-                <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-700 text-center">
+                <div className="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-xl p-3 text-sm text-green-700 dark:text-green-400 text-center">
                   {success}
                 </div>
               )}
@@ -199,9 +204,9 @@ export default function SignInPage() {
                 {loading ? (
                   <span className="flex items-center gap-2">
                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    جاري المعالجة...
+                    {t('processing')}
                   </span>
-                ) : isRegister ? 'إنشاء حساب' : 'تسجيل الدخول'}
+                ) : isRegister ? t('signUp') : t('signIn')}
               </Button>
             </form>
 
@@ -209,10 +214,10 @@ export default function SignInPage() {
               <div className="mt-4">
                 <div className="relative">
                   <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-200" />
+                    <div className="w-full border-t border-gray-200 dark:border-gray-700" />
                   </div>
                   <div className="relative flex justify-center text-xs">
-                    <span className="bg-white px-2 text-gray-400">أو</span>
+                    <span className="bg-white dark:bg-gray-900 px-2 text-gray-400">{t('or')}</span>
                   </div>
                 </div>
 
@@ -220,7 +225,7 @@ export default function SignInPage() {
                   type="button"
                   variant="outline"
                   onClick={handleGoogleSignIn}
-                  className="w-full mt-4 h-11 border-gray-300 hover:bg-gray-50 gap-2"
+                  className="w-full mt-4 h-11 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 gap-2 dark:text-gray-200"
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
@@ -228,7 +233,7 @@ export default function SignInPage() {
                     <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
                     <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
                   </svg>
-                  <span>تسجيل الدخول بحساب Google</span>
+                  <span>{t('signInWithGoogle')}</span>
                 </Button>
               </div>
             )}
@@ -237,16 +242,16 @@ export default function SignInPage() {
               <button
                 type="button"
                 onClick={() => { setIsRegister(!isRegister); setError(''); setSuccess('') }}
-                className="text-sm text-cyan-600 hover:text-cyan-700 font-medium"
+                className="text-sm text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 font-medium"
               >
-                {isRegister ? 'لديك حساب؟ تسجيل الدخول' : 'ليس لديك حساب؟ إنشاء حساب جديد'}
+                {isRegister ? t('hasAccount') : t('noAccount')}
               </button>
             </div>
           </CardContent>
         </Card>
 
-        <p className="text-center text-xs text-gray-400 mt-6">
-          بياناتك محفوظة بأمان ومتاحة من أي جهاز
+        <p className="text-center text-xs text-gray-400 dark:text-gray-500 mt-6">
+          {t('dataSafe')}
         </p>
       </div>
     </div>
