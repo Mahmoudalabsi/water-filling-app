@@ -8,9 +8,8 @@ datasource db {
   directUrl = env("POSTGRES_URL_NON_POOLING")
 }
 
-// Vercel Postgres (Neon) auto-injects these environment variables:
-// POSTGRES_PRISMA_URL - Pooled connection (with pgbouncer) for runtime queries
-// POSTGRES_URL_NON_POOLING - Direct connection for schema migrations
+// POSTGRES_PRISMA_URL = Pooled connection for runtime queries (auto-injected by Vercel Neon)
+// POSTGRES_URL_NON_POOLING = Direct connection for schema migrations (auto-injected by Vercel Neon)
 
 model User {
   id            String    @id @default(cuid())
