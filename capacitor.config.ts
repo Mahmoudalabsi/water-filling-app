@@ -5,20 +5,21 @@ const config: CapacitorConfig = {
   appName: 'تعبئة المياه',
   webDir: 'out',
   server: {
-    androidScheme: 'https'
+    // Use live URL when running in Capacitor
+    url: 'https://water-filling-app.vercel.app',
+    cleartext: true,
+  },
+  android: {
+    allowMixedContent: true,
   },
   plugins: {
     SplashScreen: {
-      launchShowDuration: 2000,
-      launchAutoHide: true,
+      launchAutoHide: false,
       backgroundColor: '#0891b2',
       showSpinner: true,
       spinnerColor: '#ffffff',
-    }
+    },
   },
-  android: {
-    allowMixedContent: false,
-  }
 };
 
 export default config;

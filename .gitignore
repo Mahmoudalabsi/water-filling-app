@@ -83,4 +83,7 @@ worklog.md
 
 # Zscripts logs
 .zscripts/*.log
-.zscripts/dev.pid
+.zscripts/dev.pidjdk/
+android-sdk/
+android/
+*.apk
