@@ -5,7 +5,9 @@ const globalForPrisma = globalThis as unknown as {
 }
 
 const createPrismaClient = () => {
-  return new PrismaClient()
+  return new PrismaClient({
+    log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+  })
 }
 
 // Reuse Prisma client in development to avoid connection pool exhaustion
