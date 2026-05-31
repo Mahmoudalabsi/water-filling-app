@@ -15,8 +15,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'كلمة المرور يجب أن تكون 6 أحرف على الأقل' }, { status: 400 })
     }
 
-    const existingUser = await db.user.findUnique({ where: { email } })
+    const existingUser = await db.user.findUnique({
+      where: { email },
+      include: { accounts: true },
+    })
+
     if (existingUser) {
+      // Check if this user was created via Google (no password)
+      if (!existingUser.password) {
+        // User signed up via Google before - let them set a password too
+        const hashedPassword = await bcrypt.hash(password, 12)
+
+        await db.user.update({
+          where: { id: existingUser.id },
+          data: {
+            name: name || existingUser.name,
+            password: hashedPassword,
+          },
+        })
+
+        return NextResponse.json({
+          success: true,
+          message: 'تم ربط كلمة المرور بحسابك بنجاح',
+          user: { id: existingUser.id, email: existingUser.email, name: existingUser.name },
+        }, { status: 200 })
+      }
+
+      // User already has a password - email is taken
       return NextResponse.json({ error: 'البريد الإلكتروني مستخدم بالفعل' }, { status: 400 })
     }
 

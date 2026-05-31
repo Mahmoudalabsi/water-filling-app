@@ -17,6 +17,7 @@ export default function SignInPage() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
   const [googleEnabled, setGoogleEnabled] = useState(false)
 
@@ -30,6 +31,7 @@ export default function SignInPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setSuccess('')
     setLoading(true)
 
     try {
@@ -44,6 +46,25 @@ export default function SignInPage() {
           setError(data.error || 'حدث خطأ في إنشاء الحساب')
           return
         }
+
+        // Check if this was a password-linking operation (Google account existed)
+        if (data.message && data.message.includes('ربط')) {
+          setSuccess(data.message)
+          // Auto sign in after linking password
+          const result = await signIn('credentials', {
+            email,
+            password,
+            redirect: false,
+          })
+          if (result?.ok) {
+            router.push('/')
+          } else {
+            setIsRegister(false)
+            setSuccess('تم ربط كلمة المرور! يمكنك الآن تسجيل الدخول')
+          }
+          return
+        }
+
         // After registration, sign in automatically
         const result = await signIn('credentials', {
           email,
@@ -164,6 +185,12 @@ export default function SignInPage() {
                 </div>
               )}
 
+              {success && (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-700 text-center">
+                  {success}
+                </div>
+              )}
+
               <Button
                 type="submit"
                 disabled={loading}
@@ -209,7 +236,7 @@ export default function SignInPage() {
             <div className="mt-6 text-center">
               <button
                 type="button"
-                onClick={() => { setIsRegister(!isRegister); setError('') }}
+                onClick={() => { setIsRegister(!isRegister); setError(''); setSuccess('') }}
                 className="text-sm text-cyan-600 hover:text-cyan-700 font-medium"
               >
                 {isRegister ? 'لديك حساب؟ تسجيل الدخول' : 'ليس لديك حساب؟ إنشاء حساب جديد'}
