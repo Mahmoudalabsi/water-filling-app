@@ -63,6 +63,21 @@ export async function POST(request: Request) {
       },
     })
 
+    // Get global email settings to copy for new user
+    let globalGmailUser: string | undefined
+    let globalGmailAppPassword: string | undefined
+    try {
+      const globalSettings = await db.settings.findFirst({
+        where: {
+          gmailUser: { not: null },
+          gmailAppPassword: { not: null },
+        },
+        select: { gmailUser: true, gmailAppPassword: true },
+      })
+      globalGmailUser = globalSettings?.gmailUser || undefined
+      globalGmailAppPassword = globalSettings?.gmailAppPassword || undefined
+    } catch {}
+
     await db.settings.create({
       data: {
         userId: user.id,
@@ -70,8 +85,10 @@ export async function POST(request: Request) {
         pricePerMinute: 0.5,
         autoResetWeekly: true,
         resetDay: 6,
-        // Copy the Resend API key if available
+        // Copy global email settings
         resendApiKey: resendApiKey || undefined,
+        gmailUser: globalGmailUser,
+        gmailAppPassword: globalGmailAppPassword,
       },
     })
 

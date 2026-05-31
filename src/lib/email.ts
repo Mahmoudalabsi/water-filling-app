@@ -4,10 +4,6 @@ import { Resend } from 'resend'
 // App URL for links in emails
 const APP_URL = process.env.NEXTAUTH_URL || 'https://water-filling-app.vercel.app'
 
-// Gmail SMTP configuration
-const GMAIL_USER = process.env.GMAIL_USER || ''
-const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD || ''
-
 // Resend lazy initialization
 let _resend: Resend | null = null
 let _lastResendKey: string | null = null
@@ -21,6 +17,37 @@ function getResend(apiKey: string): Resend {
 }
 
 /**
+ * Get Gmail credentials from env vars or database
+ */
+async function getGmailCredentials(): Promise<{ user: string; pass: string } | null> {
+  // Check env vars first
+  const envUser = process.env.GMAIL_USER
+  const envPass = process.env.GMAIL_APP_PASSWORD
+  if (envUser && envPass) {
+    return { user: envUser, pass: envPass }
+  }
+
+  // Check database
+  try {
+    const { db } = await import('@/lib/db')
+    const settings = await db.settings.findFirst({
+      where: {
+        gmailUser: { not: null },
+        gmailAppPassword: { not: null },
+      },
+      select: { gmailUser: true, gmailAppPassword: true },
+    })
+    if (settings?.gmailUser && settings?.gmailAppPassword) {
+      return { user: settings.gmailUser, pass: settings.gmailAppPassword }
+    }
+  } catch {
+    // Database might not be available
+  }
+
+  return null
+}
+
+/**
  * Email provider type
  */
 type EmailProvider = 'gmail' | 'resend' | null
@@ -30,7 +57,8 @@ type EmailProvider = 'gmail' | 'resend' | null
  */
 async function detectEmailProvider(resendApiKey?: string): Promise<EmailProvider> {
   // Check Gmail SMTP first (preferred - works with any recipient)
-  if (GMAIL_USER && GMAIL_APP_PASSWORD) {
+  const gmailCreds = await getGmailCredentials()
+  if (gmailCreds) {
     return 'gmail'
   }
 
@@ -46,13 +74,10 @@ async function detectEmailProvider(resendApiKey?: string): Promise<EmailProvider
 /**
  * Create Gmail SMTP transporter
  */
-function createGmailTransporter() {
+function createGmailTransporter(user: string, pass: string) {
   return nodemailer.createTransport({
     service: 'gmail',
-    auth: {
-      user: GMAIL_USER,
-      pass: GMAIL_APP_PASSWORD,
-    },
+    auth: { user, pass },
   })
 }
 
@@ -135,47 +160,46 @@ export async function sendVerificationEmail({ email, code, name, apiKey }: SendV
 
   const provider = await detectEmailProvider(apiKey)
 
+  // Try Gmail SMTP first
   if (provider === 'gmail') {
     try {
-      const transporter = createGmailTransporter()
-      await transporter.sendMail({
-        from: `"Water Filling App" <${GMAIL_USER}>`,
-        to: email,
-        subject,
-        html,
-      })
-      return { success: true }
-    } catch (err: any) {
-      console.error('Gmail SMTP error:', err)
-      // Fall through to try Resend if available
-      if (!apiKey) {
-        return { success: false, error: err.message || 'Failed to send email via Gmail' }
-      }
-    }
-  }
-
-  if (provider === 'resend' || (provider === 'gmail' && apiKey)) {
-    // Use Resend as primary or fallback
-    const key = apiKey || await getResendApiKeyFromDB()
-    if (key) {
-      try {
-        const { error } = await getResend(key).emails.send({
-          from: 'Water Filling App <onboarding@resend.dev>',
+      const creds = await getGmailCredentials()
+      if (creds) {
+        const transporter = createGmailTransporter(creds.user, creds.pass)
+        await transporter.sendMail({
+          from: `"Water Filling App" <${creds.user}>`,
           to: email,
           subject,
           html,
         })
-
-        if (error) {
-          console.error('Resend email error:', error)
-          return { success: false, error: error.message }
-        }
-
         return { success: true }
-      } catch (err: any) {
-        console.error('Resend send failed:', err)
-        return { success: false, error: err.message || 'Failed to send email via Resend' }
       }
+    } catch (err: any) {
+      console.error('Gmail SMTP error:', err)
+      // Fall through to try Resend if available
+    }
+  }
+
+  // Try Resend as primary or fallback
+  const resendKey = apiKey || await getResendApiKeyFromDB()
+  if (resendKey) {
+    try {
+      const { error } = await getResend(resendKey).emails.send({
+        from: 'Water Filling App <onboarding@resend.dev>',
+        to: email,
+        subject,
+        html,
+      })
+
+      if (error) {
+        console.error('Resend email error:', error)
+        return { success: false, error: error.message }
+      }
+
+      return { success: true }
+    } catch (err: any) {
+      console.error('Resend send failed:', err)
+      return { success: false, error: err.message || 'Failed to send email via Resend' }
     }
   }
 
@@ -233,7 +257,7 @@ async function getResendApiKeyFromDB(): Promise<string | null> {
 
 /**
  * Get the Resend API key from environment variable or database settings
- * Checks: 1) env var, 2) any user's settings (global fallback)
+ * Checks: 1) env var, 2) specific user's settings, 3) any user's settings (global fallback)
  */
 export async function getResendApiKey(userId?: string): Promise<string | null> {
   // First check environment variable
@@ -268,8 +292,9 @@ export async function getResendApiKey(userId?: string): Promise<string | null> {
  * Check if email verification is available (has Gmail SMTP or Resend API key)
  */
 export async function isEmailVerificationAvailable(userId?: string): Promise<boolean> {
-  // Check Gmail SMTP first
-  if (GMAIL_USER && GMAIL_APP_PASSWORD) return true
+  // Check Gmail SMTP (env or database)
+  const gmailCreds = await getGmailCredentials()
+  if (gmailCreds) return true
 
   // Check Resend
   const key = await getResendApiKey(userId)

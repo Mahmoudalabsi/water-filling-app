@@ -98,6 +98,8 @@ model Settings {
   resetDay           Int       @default(6) @map("reset_day")
   lastAutoReset      DateTime? @map("last_auto_reset")
   resendApiKey       String?   @map("resend_api_key")
+  gmailUser          String?   @map("gmail_user")
+  gmailAppPassword   String?   @map("gmail_app_password")
 
   @@unique([userId])
   @@map("settings")
