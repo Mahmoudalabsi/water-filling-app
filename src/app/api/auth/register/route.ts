@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
-import { generateVerificationCode, saveVerificationToken, sendVerificationEmail, getResendApiKey } from '@/lib/email'
+import { generateVerificationCode, saveVerificationToken, sendVerificationEmail, isEmailVerificationAvailable, getResendApiKey } from '@/lib/email'
 
 export async function POST(request: Request) {
   try {
@@ -48,9 +48,9 @@ export async function POST(request: Request) {
 
     const hashedPassword = await bcrypt.hash(password, 12)
 
-    // Check if email verification is available (API key in env or database)
-    const apiKey = await getResendApiKey()
-    const hasEmailService = !!apiKey
+    // Check if email verification is available (Gmail SMTP or Resend)
+    const hasEmailService = await isEmailVerificationAvailable()
+    const resendApiKey = await getResendApiKey()
 
     // Create user - if email service is not available, auto-verify
     const user = await db.user.create({
@@ -70,8 +70,8 @@ export async function POST(request: Request) {
         pricePerMinute: 0.5,
         autoResetWeekly: true,
         resetDay: 6,
-        // Copy the global Resend API key so new users also have it
-        resendApiKey: apiKey || undefined,
+        // Copy the Resend API key if available
+        resendApiKey: resendApiKey || undefined,
       },
     })
 
@@ -85,7 +85,6 @@ export async function POST(request: Request) {
           email,
           code,
           name,
-          apiKey: apiKey || undefined,
         })
 
         if (!emailResult.success) {

@@ -1,36 +1,66 @@
+import nodemailer from 'nodemailer'
 import { Resend } from 'resend'
-
-// Lazy-initialize Resend to avoid build-time errors when API key is not available
-let _resend: Resend | null = null
-let _lastApiKey: string | null = null
-
-function getResend(apiKey?: string): Resend {
-  const key = apiKey || process.env.RESEND_API_KEY || ''
-  if (!_resend || _lastApiKey !== key) {
-    if (!key) {
-      throw new Error('RESEND_API_KEY is not configured')
-    }
-    _resend = new Resend(key)
-    _lastApiKey = key
-  }
-  return _resend
-}
 
 // App URL for links in emails
 const APP_URL = process.env.NEXTAUTH_URL || 'https://water-filling-app.vercel.app'
 
-interface SendVerificationEmailParams {
-  email: string
-  code: string
-  name?: string
-  apiKey?: string
+// Gmail SMTP configuration
+const GMAIL_USER = process.env.GMAIL_USER || ''
+const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD || ''
+
+// Resend lazy initialization
+let _resend: Resend | null = null
+let _lastResendKey: string | null = null
+
+function getResend(apiKey: string): Resend {
+  if (!_resend || _lastResendKey !== apiKey) {
+    _resend = new Resend(apiKey)
+    _lastResendKey = apiKey
+  }
+  return _resend
 }
 
-export async function sendVerificationEmail({ email, code, name, apiKey }: SendVerificationEmailParams) {
-  const userName = name || email.split('@')[0]
+/**
+ * Email provider type
+ */
+type EmailProvider = 'gmail' | 'resend' | null
 
-  // Arabic and bilingual email
-  const html = `
+/**
+ * Detect which email provider is available
+ */
+async function detectEmailProvider(resendApiKey?: string): Promise<EmailProvider> {
+  // Check Gmail SMTP first (preferred - works with any recipient)
+  if (GMAIL_USER && GMAIL_APP_PASSWORD) {
+    return 'gmail'
+  }
+
+  // Check Resend API key
+  const apiKey = resendApiKey || await getResendApiKeyFromDB()
+  if (apiKey) {
+    return 'resend'
+  }
+
+  return null
+}
+
+/**
+ * Create Gmail SMTP transporter
+ */
+function createGmailTransporter() {
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: GMAIL_USER,
+      pass: GMAIL_APP_PASSWORD,
+    },
+  })
+}
+
+/**
+ * Generate the HTML email content
+ */
+function generateEmailHtml(code: string, userName: string): string {
+  return `
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -89,25 +119,67 @@ export async function sendVerificationEmail({ email, code, name, apiKey }: SendV
 </body>
 </html>
   `
+}
 
-  try {
-    const { error } = await getResend(apiKey).emails.send({
-      from: 'Water Filling App <onboarding@resend.dev>',
-      to: email,
-      subject: `رمز التحقق - تعبئة المياه | Verification Code`,
-      html,
-    })
+interface SendVerificationEmailParams {
+  email: string
+  code: string
+  name?: string
+  apiKey?: string  // Resend API key (optional, for backward compatibility)
+}
 
-    if (error) {
-      console.error('Resend email error:', error)
-      return { success: false, error: error.message }
+export async function sendVerificationEmail({ email, code, name, apiKey }: SendVerificationEmailParams) {
+  const userName = name || email.split('@')[0]
+  const html = generateEmailHtml(code, userName)
+  const subject = 'رمز التحقق - تعبئة المياه | Verification Code'
+
+  const provider = await detectEmailProvider(apiKey)
+
+  if (provider === 'gmail') {
+    try {
+      const transporter = createGmailTransporter()
+      await transporter.sendMail({
+        from: `"Water Filling App" <${GMAIL_USER}>`,
+        to: email,
+        subject,
+        html,
+      })
+      return { success: true }
+    } catch (err: any) {
+      console.error('Gmail SMTP error:', err)
+      // Fall through to try Resend if available
+      if (!apiKey) {
+        return { success: false, error: err.message || 'Failed to send email via Gmail' }
+      }
     }
-
-    return { success: true }
-  } catch (err: any) {
-    console.error('Email send failed:', err)
-    return { success: false, error: err.message || 'Failed to send email' }
   }
+
+  if (provider === 'resend' || (provider === 'gmail' && apiKey)) {
+    // Use Resend as primary or fallback
+    const key = apiKey || await getResendApiKeyFromDB()
+    if (key) {
+      try {
+        const { error } = await getResend(key).emails.send({
+          from: 'Water Filling App <onboarding@resend.dev>',
+          to: email,
+          subject,
+          html,
+        })
+
+        if (error) {
+          console.error('Resend email error:', error)
+          return { success: false, error: error.message }
+        }
+
+        return { success: true }
+      } catch (err: any) {
+        console.error('Resend send failed:', err)
+        return { success: false, error: err.message || 'Failed to send email via Resend' }
+      }
+    }
+  }
+
+  return { success: false, error: 'No email service configured. Set GMAIL_USER + GMAIL_APP_PASSWORD or RESEND_API_KEY.' }
 }
 
 /**
@@ -143,8 +215,25 @@ export async function saveVerificationToken(email: string, code: string) {
 }
 
 /**
+ * Get the Resend API key from database (global fallback)
+ */
+async function getResendApiKeyFromDB(): Promise<string | null> {
+  try {
+    const { db } = await import('@/lib/db')
+    const anySettings = await db.settings.findFirst({
+      where: { resendApiKey: { not: null } },
+      select: { resendApiKey: true },
+    })
+    if (anySettings?.resendApiKey) return anySettings.resendApiKey
+  } catch {
+    // Database might not be available
+  }
+  return null
+}
+
+/**
  * Get the Resend API key from environment variable or database settings
- * Checks: 1) env var, 2) specific user's settings, 3) any user's settings (global fallback)
+ * Checks: 1) env var, 2) any user's settings (global fallback)
  */
 export async function getResendApiKey(userId?: string): Promise<string | null> {
   // First check environment variable
@@ -176,9 +265,13 @@ export async function getResendApiKey(userId?: string): Promise<string | null> {
 }
 
 /**
- * Check if email verification is available (has API key)
+ * Check if email verification is available (has Gmail SMTP or Resend API key)
  */
 export async function isEmailVerificationAvailable(userId?: string): Promise<boolean> {
+  // Check Gmail SMTP first
+  if (GMAIL_USER && GMAIL_APP_PASSWORD) return true
+
+  // Check Resend
   const key = await getResendApiKey(userId)
   return !!key
 }
