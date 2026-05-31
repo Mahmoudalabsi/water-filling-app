@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
+import { generateVerificationCode, saveVerificationToken, sendVerificationEmail } from '@/lib/email'
 
 export async function POST(request: Request) {
   try {
@@ -47,11 +48,13 @@ export async function POST(request: Request) {
 
     const hashedPassword = await bcrypt.hash(password, 12)
 
+    // Create user WITHOUT emailVerified (they need to verify first)
     const user = await db.user.create({
       data: {
         name,
         email,
         password: hashedPassword,
+        // emailVerified is null - user must verify their email
       },
     })
 
@@ -65,7 +68,36 @@ export async function POST(request: Request) {
       },
     })
 
-    return NextResponse.json({ success: true, user: { id: user.id, email: user.email, name: user.name } }, { status: 201 })
+    // Generate and save verification code
+    const code = generateVerificationCode()
+    await saveVerificationToken(email, code)
+
+    // Send verification email
+    const emailResult = await sendVerificationEmail({
+      email,
+      code,
+      name,
+    })
+
+    if (!emailResult.success) {
+      console.error('Failed to send verification email:', emailResult.error)
+      // Still return success for registration, but indicate email issue
+      return NextResponse.json({
+        success: true,
+        requiresVerification: true,
+        emailSent: false,
+        message: 'تم إنشاء الحساب لكن حدث خطأ في إرسال بريد التحقق، يرجى طلب رمز جديد',
+        user: { id: user.id, email: user.email, name: user.name },
+      }, { status: 201 })
+    }
+
+    return NextResponse.json({
+      success: true,
+      requiresVerification: true,
+      emailSent: true,
+      message: 'تم إنشاء الحساب. يرجى التحقق من بريدك الإلكتروني',
+      user: { id: user.id, email: user.email, name: user.name },
+    }, { status: 201 })
   } catch (error) {
     console.error('Registration error:', error)
     return NextResponse.json({ error: 'حدث خطأ في إنشاء الحساب' }, { status: 500 })

@@ -206,6 +206,30 @@ export const ar = {
   extraPriceInfo: 'سعر الدقيقة الإضافية:',
   costColumn: 'التكلفة',
   fillingLogTitle: 'سجل الجلسات',
+
+  // Email Verification
+  verifyEmail: 'تأكيد البريد الإلكتروني',
+  verifyEmailTitle: 'تأكيد بريدك الإلكتروني',
+  verifyEmailDesc: 'تم إرسال رمز التحقق إلى بريدك الإلكتروني',
+  verifyEmailSentTo: 'تم إرسال الرمز إلى',
+  enterVerificationCode: 'أدخل رمز التحقق المكون من 6 أرقام',
+  verificationCode: 'رمز التحقق',
+  verify: 'تأكيد',
+  verifying: 'جاري التحقق...',
+  verifiedSuccess: 'تم تأكيد البريد الإلكتروني بنجاح!',
+  verifiedRedirecting: 'جاري التحويل لصفحة تسجيل الدخول...',
+  resendCode: 'إعادة إرسال الرمز',
+  resendCodeIn: 'إعادة الإرسال بعد',
+  seconds: 'ثانية',
+  codeExpired: 'رمز التحقق منتهي الصلاحية، يرجى طلب رمز جديد',
+  invalidCode: 'رمز التحقق غير صحيح',
+  emailNotVerified: 'البريد الإلكتروني غير مؤكد',
+  emailNotVerifiedDesc: 'يرجى تأكيد بريدك الإلكتروني أولاً لتسجيل الدخول',
+  goToVerify: 'تأكيد البريد الإلكتروني',
+  emailSent: 'تم إرسال رمز التحقق إلى بريدك الإلكتروني',
+  emailSendError: 'حدث خطأ في إرسال بريد التحقق',
+  registrationSuccessVerify: 'تم إنشاء الحساب. يرجى التحقق من بريدك الإلكتروني',
+  checkInbox: 'تحقق من صندوق الوارد والبريد غير المرغوب فيه',
 }
 
 export type TranslationKeys = keyof typeof ar

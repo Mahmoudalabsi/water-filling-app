@@ -35,6 +35,12 @@ export const authOptions: NextAuthOptions = {
           throw new Error('البريد الإلكتروني أو كلمة المرور غير صحيحة')
         }
 
+        // Check if email is verified (only for credential-based users)
+        // Google users have emailVerified set automatically
+        if (!user.emailVerified) {
+          throw new Error('EMAIL_NOT_VERIFIED')
+        }
+
         return { id: user.id, email: user.email, name: user.name, image: user.image }
       },
     }),

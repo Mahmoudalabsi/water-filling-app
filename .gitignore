@@ -84,6 +84,8 @@ worklog.md
 # Zscripts logs
 .zscripts/*.log
 .zscripts/dev.pidjdk/
+jdk/
 android-sdk/
 android/
 *.apk
+agent-ctx/

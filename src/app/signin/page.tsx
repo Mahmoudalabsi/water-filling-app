@@ -23,6 +23,9 @@ export default function SignInPage() {
   const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
   const [googleEnabled, setGoogleEnabled] = useState(false)
+  // Email verification state
+  const [showVerifyPrompt, setShowVerifyPrompt] = useState(false)
+  const [unverifiedEmail, setUnverifiedEmail] = useState('')
 
   useEffect(() => {
     fetch('/api/auth/providers-status')
@@ -35,6 +38,7 @@ export default function SignInPage() {
     e.preventDefault()
     setError('')
     setSuccess('')
+    setShowVerifyPrompt(false)
     setLoading(true)
 
     try {
@@ -50,6 +54,7 @@ export default function SignInPage() {
           return
         }
 
+        // Check if this was a "link password" action (existing Google account)
         if (data.message && data.message.includes('ربط')) {
           setSuccess(t('passwordLinked'))
           const result = await signIn('credentials', {
@@ -66,6 +71,13 @@ export default function SignInPage() {
           return
         }
 
+        // New registration - redirect to verification page
+        if (data.requiresVerification) {
+          router.push(`/verify-email?email=${encodeURIComponent(email)}`)
+          return
+        }
+
+        // Fallback: try to sign in directly
         const result = await signIn('credentials', {
           email,
           password,
@@ -83,7 +95,13 @@ export default function SignInPage() {
           password,
           redirect: false,
         })
-        if (result?.error) {
+
+        if (result?.error === 'EMAIL_NOT_VERIFIED' || result?.error === 'يحتاج تأكيد البريد الإلكتروني') {
+          // Email not verified - show verification prompt
+          setUnverifiedEmail(email)
+          setShowVerifyPrompt(true)
+          setError('')
+        } else if (result?.error) {
           setError(t('invalidCredentials'))
         } else {
           router.push('/')
@@ -98,6 +116,36 @@ export default function SignInPage() {
 
   const handleGoogleSignIn = () => {
     signIn('google', { callbackUrl: '/' })
+  }
+
+  const handleGoToVerify = () => {
+    router.push(`/verify-email?email=${encodeURIComponent(unverifiedEmail)}`)
+  }
+
+  const handleResendForLogin = async () => {
+    if (!unverifiedEmail) return
+    setLoading(true)
+    try {
+      const res = await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: unverifiedEmail }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setSuccess(t('emailSent'))
+        // Redirect to verification page
+        setTimeout(() => {
+          router.push(`/verify-email?email=${encodeURIComponent(unverifiedEmail)}`)
+        }, 1500)
+      } else {
+        setError(data.error || t('emailSendError'))
+      }
+    } catch {
+      setError(t('connectionError'))
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -116,6 +164,45 @@ export default function SignInPage() {
           <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">{t('appName')}</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t('appDesc')}</p>
         </div>
+
+        {/* Email Not Verified Banner */}
+        {showVerifyPrompt && (
+          <Card className="border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 mb-4 shadow-lg">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <Mail className="w-6 h-6 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <h3 className="font-semibold text-amber-800 dark:text-amber-300 mb-1">
+                    {t('emailNotVerified')}
+                  </h3>
+                  <p className="text-sm text-amber-700 dark:text-amber-400 mb-3">
+                    {t('emailNotVerifiedDesc')}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleGoToVerify}
+                      className="bg-amber-600 hover:bg-amber-700 text-white"
+                    >
+                      {t('goToVerify')}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleResendForLogin}
+                      disabled={loading}
+                      className="border-amber-300 dark:border-amber-600 text-amber-700 dark:text-amber-400"
+                    >
+                      {t('resendCode')}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="border-cyan-200 dark:border-gray-700 shadow-xl shadow-cyan-100/50 dark:shadow-gray-900/50 bg-white dark:bg-gray-900">
           <CardHeader className="pb-4">
@@ -151,7 +238,7 @@ export default function SignInPage() {
                     type="email"
                     placeholder="example@email.com"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => { setEmail(e.target.value); setShowVerifyPrompt(false) }}
                     className={`${dir === 'rtl' ? 'pr-10' : 'pl-10'} ${dir === 'rtl' ? 'text-right' : 'text-left'} dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100`}
                     dir="ltr"
                     required
@@ -241,7 +328,7 @@ export default function SignInPage() {
             <div className="mt-6 text-center">
               <button
                 type="button"
-                onClick={() => { setIsRegister(!isRegister); setError(''); setSuccess('') }}
+                onClick={() => { setIsRegister(!isRegister); setError(''); setSuccess(''); setShowVerifyPrompt(false) }}
                 className="text-sm text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 font-medium"
               >
                 {isRegister ? t('hasAccount') : t('noAccount')}
