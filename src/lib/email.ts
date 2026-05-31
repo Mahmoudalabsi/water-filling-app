@@ -1,6 +1,17 @@
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+// Lazy-initialize Resend to avoid build-time errors when API key is not available
+let _resend: Resend | null = null
+function getResend(): Resend {
+  if (!_resend) {
+    const apiKey = process.env.RESEND_API_KEY
+    if (!apiKey) {
+      throw new Error('RESEND_API_KEY environment variable is not set')
+    }
+    _resend = new Resend(apiKey)
+  }
+  return _resend
+}
 
 // App URL for links in emails
 const APP_URL = process.env.NEXTAUTH_URL || 'https://water-filling-app.vercel.app'
@@ -76,7 +87,7 @@ export async function sendVerificationEmail({ email, code, name }: SendVerificat
   `
 
   try {
-    const { error } = await resend.emails.send({
+    const { error } = await getResend().emails.send({
       from: 'تعبئة المياه <onboarding@resend.dev>',
       to: email,
       subject: `رمز التحقق - تعبئة المياه | Verification Code`,
