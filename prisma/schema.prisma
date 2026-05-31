@@ -8,18 +8,27 @@ datasource db {
 }
 
 model Family {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   name      String
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
   sessions  Session[]
 }
 
 model Session {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   familyId  String
-  family    Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  family    Family    @relation(fields: [familyId], references: [id], onDelete: Cascade)
   startTime DateTime
   endTime   DateTime?
-  duration  Int      @default(0) // duration in seconds
-  createdAt DateTime @default(now())
+  duration  Int       @default(0) // duration in seconds
+  createdAt DateTime  @default(now())
+}
+
+model Settings {
+  id                String    @id @default(cuid())
+  freeMinutesPerWeek Int      @default(12)
+  pricePerMinute    Float    @default(0.5)
+  autoResetWeekly   Boolean  @default(true)
+  resetDay          Int      @default(6) // 0=Sunday, 1=Monday, ..., 6=Saturday
+  lastAutoReset     DateTime?
 }

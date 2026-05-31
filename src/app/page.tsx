@@ -8,21 +8,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import {
   Users,
   Plus,
   Trash2,
-  Play,
   Pause,
   Timer,
   Droplets,
   AlertCircle,
   CheckCircle2,
   Clock,
-  RefreshCw,
   ChevronDown,
   ChevronUp,
   History,
@@ -39,22 +36,36 @@ import {
   X,
   AlertTriangle,
   Info,
+  Play,
+  TrendingUp,
+  Activity,
+  DollarSign,
 } from 'lucide-react'
-import {
-  type Family,
-  type AppSettings,
-  getFamilies,
-  getSettings,
-  saveSettings as storeSaveSettings,
-  resetSettings as storeResetSettings,
-  addFamily as storeAddFamily,
-  updateFamily as storeUpdateFamily,
-  deleteFamily as storeDeleteFamily,
-  startSession as storeStartSession,
-  stopSession as storeStopSession,
-  resetWeeklyUsage as storeResetWeeklyUsage,
-  resetAllWeeklyUsage as storeResetAllWeeklyUsage,
-} from '@/lib/store'
+
+// Types from store (kept for compatibility)
+interface Session {
+  id: string
+  familyId: string
+  startTime: string
+  endTime: string | null
+  duration: number
+  createdAt: string
+}
+
+interface Family {
+  id: string
+  name: string
+  createdAt: string
+  sessions: Session[]
+}
+
+interface AppSettings {
+  freeMinutesPerWeek: number
+  pricePerMinute: number
+  autoResetWeekly: boolean
+  resetDay: number
+  lastAutoReset: string | null
+}
 
 interface FamilyWithUsage extends Family {
   weeklySeconds: number
@@ -151,11 +162,9 @@ export default function Home() {
   const freeMin = settings.freeMinutesPerWeek
   const priceMin = settings.pricePerMinute
 
-  // Arabic day names for selector
   const dayNames = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
   const resetDayName = dayNames[settings.resetDay ?? 6] || 'السبت'
 
-  // Calculate week start based on the selected reset day
   const getWeekStart = (resetDay: number): Date => {
     const now = new Date()
     const dayOfWeek = now.getDay()
@@ -206,15 +215,24 @@ export default function Home() {
     setInstallPrompt(null)
   }
 
-  const refreshFamilies = useCallback(() => {
+  // ====== API-BASED DATA OPERATIONS ======
+
+  const refreshFamilies = useCallback(async () => {
     try {
-      const data = getFamilies()
-      const currentSettings = getSettings()
+      const [familiesRes, settingsRes] = await Promise.all([
+        fetch('/api/families'),
+        fetch('/api/settings'),
+      ])
+
+      if (!familiesRes.ok || !settingsRes.ok) throw new Error('API error')
+
+      const data: Family[] = await familiesRes.json()
+      const currentSettings: AppSettings = await settingsRes.json()
+
       setSettings(currentSettings)
 
       const familiesWithUsage: FamilyWithUsage[] = data.map((family) => {
         const weekStart = getWeekStart(currentSettings.resetDay ?? 6)
-
         const weeklySessions = (family.sessions || []).filter((s) => new Date(s.startTime) >= weekStart)
         const weeklySeconds = weeklySessions.reduce((acc, s) => acc + (s.duration || 0), 0)
         const activeSession = (family.sessions || []).find((s) => !s.endTime)
@@ -242,34 +260,48 @@ export default function Home() {
   }, [startTimerInterval, showToast])
 
   useEffect(() => {
-    const init = () => {
-      refreshFamilies()
+    const init = async () => {
+      await refreshFamilies()
       setLoading(false)
     }
     init()
     return () => { Object.values(timerIntervals.current).forEach(clearInterval) }
   }, [refreshFamilies])
 
-  // Family operations
-  const addFamily = () => {
+  // Family operations via API
+  const addFamily = async () => {
     if (!newFamilyName.trim()) return
-    storeAddFamily(newFamilyName.trim())
-    setNewFamilyName('')
-    setAddDialogOpen(false)
-    refreshFamilies()
-    showToast('success', `تمت إضافة عائلة "${newFamilyName.trim()}" بنجاح`)
+    try {
+      const res = await fetch('/api/families', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newFamilyName.trim() }),
+      })
+      if (!res.ok) throw new Error()
+      setNewFamilyName('')
+      setAddDialogOpen(false)
+      await refreshFamilies()
+      showToast('success', `تمت إضافة عائلة "${newFamilyName.trim()}" بنجاح`)
+    } catch {
+      showToast('error', 'حدث خطأ في إضافة العائلة')
+    }
   }
 
   const deleteFamily = (id: string, name: string) => {
     showConfirm(
       'حذف العائلة',
       `هل أنت متأكد من حذف عائلة "${name}"؟ سيتم حذف جميع بياناتها وجلساتها.`,
-      () => {
-        storeDeleteFamily(id)
-        stopTimerInterval(id)
-        setTimers((prev) => { const n = { ...prev }; delete n[id]; return n })
-        refreshFamilies()
-        showToast('success', `تم حذف عائلة "${name}"`)
+      async () => {
+        try {
+          const res = await fetch(`/api/families/${id}`, { method: 'DELETE' })
+          if (!res.ok) throw new Error()
+          stopTimerInterval(id)
+          setTimers((prev) => { const n = { ...prev }; delete n[id]; return n })
+          await refreshFamilies()
+          showToast('success', `تم حذف عائلة "${name}"`)
+        } catch {
+          showToast('error', 'حدث خطأ في حذف العائلة')
+        }
       },
       'danger'
     )
@@ -281,46 +313,74 @@ export default function Home() {
     setEditFamilyDialogOpen(true)
   }
 
-  const saveEditFamily = () => {
+  const saveEditFamily = async () => {
     if (!editingFamily || !editFamilyName.trim()) return
-    storeUpdateFamily(editingFamily.id, editFamilyName.trim())
-    setEditFamilyDialogOpen(false)
-    setEditingFamily(null)
-    refreshFamilies()
-    showToast('success', 'تم تعديل اسم العائلة بنجاح')
-  }
-
-  const handleStartSession = (familyId: string) => {
-    const result = storeStartSession(familyId)
-    if (result.success) {
-      setTimers((prev) => ({ ...prev, [familyId]: 0 }))
-      startTimerInterval(familyId)
-      refreshFamilies()
-      showToast('info', 'تم بدء جلسة التعبئة', 2000)
-    } else {
-      showToast('error', result.error || 'حدث خطأ في بدء الجلسة')
+    try {
+      const res = await fetch(`/api/families/${editingFamily.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: editFamilyName.trim() }),
+      })
+      if (!res.ok) throw new Error()
+      setEditFamilyDialogOpen(false)
+      setEditingFamily(null)
+      await refreshFamilies()
+      showToast('success', 'تم تعديل اسم العائلة بنجاح')
+    } catch {
+      showToast('error', 'حدث خطأ في تعديل العائلة')
     }
   }
 
-  const handleStopSession = (familyId: string, sessionId: string) => {
+  const handleStartSession = async (familyId: string) => {
+    try {
+      const res = await fetch(`/api/families/${familyId}/start`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) {
+        showToast('error', data.error || 'حدث خطأ في بدء الجلسة')
+        return
+      }
+      setTimers((prev) => ({ ...prev, [familyId]: 0 }))
+      startTimerInterval(familyId)
+      await refreshFamilies()
+      showToast('info', 'تم بدء جلسة التعبئة', 2000)
+    } catch {
+      showToast('error', 'حدث خطأ في بدء الجلسة')
+    }
+  }
+
+  const handleStopSession = async (familyId: string, sessionId: string) => {
     const elapsed = timers[familyId] || 0
-    storeStopSession(familyId, sessionId, elapsed)
-    stopTimerInterval(familyId)
-    refreshFamilies()
-    const mins = (elapsed / 60).toFixed(1)
-    showToast('success', `تم إيقاف الجلسة - المدة: ${mins} دقيقة`)
+    try {
+      const res = await fetch(`/api/families/${familyId}/stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, duration: elapsed }),
+      })
+      if (!res.ok) throw new Error()
+      stopTimerInterval(familyId)
+      await refreshFamilies()
+      const mins = (elapsed / 60).toFixed(1)
+      showToast('success', `تم إيقاف الجلسة - المدة: ${mins} دقيقة`)
+    } catch {
+      showToast('error', 'حدث خطأ في إيقاف الجلسة')
+    }
   }
 
   const resetWeekly = (familyId: string, familyName: string) => {
     showConfirm(
       'إعادة تعيين الاستخدام',
       `هل أنت متأكد من إعادة تعيين الاستخدام الأسبوعي لعائلة "${familyName}"؟`,
-      () => {
-        storeResetWeeklyUsage(familyId)
-        stopTimerInterval(familyId)
-        setTimers((prev) => { const n = { ...prev }; delete n[familyId]; return n })
-        refreshFamilies()
-        showToast('success', `تم إعادة تعيين الاستخدام لعائلة "${familyName}"`)
+      async () => {
+        try {
+          const res = await fetch(`/api/families/${familyId}/reset`, { method: 'POST' })
+          if (!res.ok) throw new Error()
+          stopTimerInterval(familyId)
+          setTimers((prev) => { const n = { ...prev }; delete n[familyId]; return n })
+          await refreshFamilies()
+          showToast('success', `تم إعادة تعيين الاستخدام لعائلة "${familyName}"`)
+        } catch {
+          showToast('error', 'حدث خطأ في إعادة التعيين')
+        }
       },
       'warning'
     )
@@ -330,69 +390,88 @@ export default function Home() {
     showConfirm(
       'تصفير جميع العدادات',
       'هل أنت متأكد من تصفير جميع العدادات؟ سيتم حذف جميع الجلسات لجميع العائلات.',
-      () => {
-        families.forEach((family) => {
-          if (family.activeSessionId) {
-            stopTimerInterval(family.id)
-          }
-        })
-        setTimers({})
-        storeResetAllWeeklyUsage()
-        refreshFamilies()
-        showToast('success', 'تم تصفير جميع العدادات بنجاح')
+      async () => {
+        try {
+          const res = await fetch('/api/reset-all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+          })
+          if (!res.ok) throw new Error()
+          families.forEach((family) => {
+            if (family.activeSessionId) stopTimerInterval(family.id)
+          })
+          setTimers({})
+          await refreshFamilies()
+          showToast('success', 'تم تصفير جميع العدادات بنجاح')
+        } catch {
+          showToast('error', 'حدث خطأ في تصفير العدادات')
+        }
       },
       'warning'
     )
   }
 
-  // Settings operations
+  // Settings operations via API
   const openSettings = () => {
     setSettingsForm({ ...settings })
     setSettingsDialogOpen(true)
   }
 
-  const saveSettingsForm = () => {
+  const saveSettingsForm = async () => {
     if (settingsForm.freeMinutesPerWeek <= 0 || settingsForm.pricePerMinute < 0) return
-    storeSaveSettings(settingsForm)
-    setSettingsDialogOpen(false)
-    refreshFamilies()
-    showToast('success', 'تم حفظ الإعدادات بنجاح')
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settingsForm),
+      })
+      if (!res.ok) throw new Error()
+      setSettingsDialogOpen(false)
+      await refreshFamilies()
+      showToast('success', 'تم حفظ الإعدادات بنجاح')
+    } catch {
+      showToast('error', 'حدث خطأ في حفظ الإعدادات')
+    }
   }
 
-  const handleResetSettings = () => {
-    storeResetSettings()
-    setSettingsForm({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, resetDay: 6, lastAutoReset: null })
-    refreshFamilies()
-    showToast('info', 'تم استعادة الإعدادات الافتراضية')
+  const handleResetSettings = async () => {
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          freeMinutesPerWeek: 12,
+          pricePerMinute: 0.5,
+          autoResetWeekly: true,
+          resetDay: 6,
+          lastAutoReset: null,
+        }),
+      })
+      if (!res.ok) throw new Error()
+      setSettingsForm({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, resetDay: 6, lastAutoReset: null })
+      await refreshFamilies()
+      showToast('info', 'تم استعادة الإعدادات الافتراضية')
+    } catch {
+      showToast('error', 'حدث خطأ في استعادة الإعدادات')
+    }
   }
 
-  // Toggle auto-reset (only from settings)
-  const toggleAutoReset = (checked: boolean) => {
-    const updated = { ...settings, autoResetWeekly: checked }
-    storeSaveSettings(updated)
-    setSettings(updated)
-    showToast('info', checked ? `تم تفعيل التصفير التلقائي كل ${resetDayName}` : 'تم تعطيل التصفير التلقائي - استخدم زر التصفير', 3000)
-  }
-
-  // Auto-reset check: run on load and periodically
+  // Auto-reset check via API
   useEffect(() => {
-    const checkAutoReset = () => {
+    const checkAutoReset = async () => {
       try {
-        const currentSettings = getSettings()
-        if (!currentSettings.autoResetWeekly) return
-
-        const weekStart = getWeekStart(currentSettings.resetDay ?? 6)
-        const lastReset = currentSettings.lastAutoReset ? new Date(currentSettings.lastAutoReset) : null
-
-        if (!lastReset || lastReset < weekStart) {
-          storeResetAllWeeklyUsage()
-          const newSettings = { ...currentSettings, lastAutoReset: new Date().toISOString() }
-          storeSaveSettings(newSettings)
-          setSettings(newSettings)
+        const res = await fetch('/api/reset-all', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ checkAutoReset: true }),
+        })
+        const data = await res.json()
+        if (data.didReset) {
           setTimers({})
           Object.values(timerIntervals.current).forEach(clearInterval)
           timerIntervals.current = {}
-          refreshFamilies()
+          await refreshFamilies()
           showToast('success', 'تم التصفير التلقائي الأسبوعي', 4000)
         }
       } catch {
@@ -403,7 +482,7 @@ export default function Home() {
     checkAutoReset()
     const interval = setInterval(checkAutoReset, 60000)
     return () => clearInterval(interval)
-  }, [refreshFamilies, showToast, resetDayName])
+  }, [refreshFamilies, showToast])
 
   // Formatting helpers
   const formatTime = (seconds: number): string => {
@@ -414,7 +493,6 @@ export default function Home() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
   }
   const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
-  const formatDateTime = (dateStr: string) => new Date(dateStr).toLocaleDateString('ar-EG', { month: 'short', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit' })
   const formatTimeOfDay = (dateStr: string) => new Date(dateStr).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
 
   const calculateCost = (family: FamilyWithUsage) => {
@@ -517,57 +595,67 @@ export default function Home() {
         </div>
       )}
 
-      {/* Header */}
+      {/* ====== HEADER ====== */}
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-cyan-100 shadow-sm">
-        <div className="max-w-lg mx-auto px-3 py-2 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center shadow-lg shadow-cyan-200">
-              <Droplets className="w-5 h-5 text-white" />
+        <div className="max-w-7xl mx-auto px-3 md:px-6 py-2 md:py-3 flex items-center justify-between">
+          {/* Logo & Title */}
+          <div className="flex items-center gap-2 md:gap-3">
+            <div className="w-9 h-9 md:w-11 md:h-11 rounded-xl bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center shadow-lg shadow-cyan-200">
+              <Droplets className="w-5 h-5 md:w-6 md:h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-base font-bold text-gray-800">تعبئة المياه</h1>
-              <p className="text-[10px] text-gray-500">إدارة استهلاك المياه للعائلات</p>
+              <h1 className="text-base md:text-xl font-bold text-gray-800">تعبئة المياه</h1>
+              <p className="text-[10px] md:text-xs text-gray-500">إدارة استهلاك المياه للعائلات</p>
             </div>
           </div>
-          <div className="flex items-center gap-1.5">
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-1 md:gap-2">
             {activeFamilyCount > 0 && (
-              <Badge variant="default" className="bg-emerald-500 hover:bg-emerald-600 text-white gap-1 text-[10px]">
+              <Badge variant="default" className="bg-emerald-500 hover:bg-emerald-600 text-white gap-1 text-[10px] md:text-xs">
                 <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
-                {activeFamilyCount} نشط
+                <span className="hidden sm:inline">{activeFamilyCount} نشط</span>
+                <span className="sm:hidden">{activeFamilyCount}</span>
               </Badge>
             )}
-            {/* Reset status indicator - no switch, just status + optional reset button */}
+
+            {/* Auto reset indicator */}
             {settings.autoResetWeekly ? (
-              <div className="flex items-center gap-1.5 bg-emerald-50/80 rounded-lg border border-emerald-200 px-2 py-1">
+              <div className="hidden md:flex items-center gap-1.5 bg-emerald-50/80 rounded-lg border border-emerald-200 px-2.5 py-1.5">
                 <Zap className="w-3.5 h-3.5 text-emerald-600" />
-                <span className="text-[10px] font-semibold text-emerald-700">تلقائي</span>
-                <span className="text-[9px] text-emerald-600 bg-emerald-100 rounded px-1 py-0.5 border border-emerald-300">{resetDayName}</span>
+                <span className="text-[11px] font-semibold text-emerald-700">تلقائي</span>
+                <span className="text-[10px] text-emerald-600 bg-emerald-100 rounded px-1 py-0.5 border border-emerald-300">{resetDayName}</span>
               </div>
             ) : (
               <Button variant="outline" size="sm" onClick={resetAllCounters} className="gap-1 text-xs border-red-300 text-red-700 hover:text-red-800 hover:bg-red-50 hover:border-red-400 bg-red-50/50 font-semibold h-7 px-2" title="تصفير جميع العدادات">
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>تصفير</span>
+                <span className="hidden sm:inline">تصفير</span>
               </Button>
             )}
-            {/* Settings Button */}
-            <Button variant="outline" size="sm" onClick={openSettings} className="gap-1.5 text-xs border-cyan-300 text-cyan-700 hover:text-cyan-800 hover:bg-cyan-50 hover:border-cyan-400 bg-cyan-50/50 font-semibold">
+
+            {/* Settings */}
+            <Button variant="outline" size="sm" onClick={openSettings} className="gap-1 md:gap-1.5 text-xs border-cyan-300 text-cyan-700 hover:text-cyan-800 hover:bg-cyan-50 hover:border-cyan-400 bg-cyan-50/50 font-semibold">
               <Settings className="w-4 h-4" />
-              <span>الإعدادات</span>
+              <span className="hidden md:inline">الإعدادات</span>
             </Button>
+
+            {/* Log view toggle */}
             <Button
               variant={currentView === 'log' ? 'default' : 'outline'}
               size="sm"
-              className={`gap-1.5 text-xs ${currentView === 'log' ? 'bg-gradient-to-r from-cyan-600 to-emerald-600 text-white border-transparent' : 'border-cyan-200 text-cyan-700 hover:bg-cyan-50'}`}
+              className={`gap-1 md:gap-1.5 text-xs ${currentView === 'log' ? 'bg-gradient-to-r from-cyan-600 to-emerald-600 text-white border-transparent' : 'border-cyan-200 text-cyan-700 hover:bg-cyan-50'}`}
               onClick={() => setCurrentView(currentView === 'log' ? 'dashboard' : 'log')}
             >
               <History className="w-3.5 h-3.5" />
-              <span>السجل</span>
+              <span className="hidden md:inline">السجل</span>
             </Button>
+
+            {/* Add family */}
             <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
               <DialogTrigger asChild>
-                <Button size="sm" className="gap-1.5 bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-700 hover:to-emerald-700 text-white shadow-md text-xs">
+                <Button size="sm" className="gap-1 md:gap-1.5 bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-700 hover:to-emerald-700 text-white shadow-md text-xs">
                   <Plus className="w-3.5 h-3.5" />
-                  <span>إضافة</span>
+                  <span className="hidden sm:inline">إضافة</span>
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-md" dir="rtl">
@@ -595,7 +683,7 @@ export default function Home() {
 
       {/* ====== SETTINGS DIALOG ====== */}
       <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
-        <DialogContent className="sm:max-w-md" dir="rtl">
+        <DialogContent className="sm:max-w-md md:max-w-lg" dir="rtl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-right">
               <Settings className="w-5 h-5 text-cyan-600" />
@@ -634,8 +722,6 @@ export default function Home() {
               />
               <p className="text-[10px] text-gray-400">سعر كل دقيقة بعد تجاوز الحد المجاني</p>
             </div>
-
-            {/* Auto Reset Weekly */}
             <Separator />
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
@@ -651,8 +737,6 @@ export default function Home() {
                 className="data-[state=checked]:bg-emerald-500"
               />
             </div>
-
-            {/* Reset Day Selector - only visible when auto reset is on */}
             {settingsForm.autoResetWeekly && (
               <div className="space-y-2 bg-emerald-50/50 border border-emerald-200 rounded-xl p-3">
                 <Label className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
@@ -678,8 +762,6 @@ export default function Home() {
                 <p className="text-[10px] text-gray-400">يتم تصفير العدادات تلقائياً كل يوم {dayNames[settingsForm.resetDay ?? 6]}</p>
               </div>
             )}
-
-            {/* Preview */}
             <div className="bg-gradient-to-r from-cyan-50 to-emerald-50 border border-cyan-200 rounded-xl p-3">
               <p className="text-xs font-semibold text-cyan-800 mb-1.5">معاينة الإعدادات:</p>
               <div className="flex justify-between text-xs text-gray-600">
@@ -743,11 +825,13 @@ export default function Home() {
         </DialogContent>
       </Dialog>
 
-      {/* DASHBOARD VIEW */}
+      {/* ====== DASHBOARD VIEW ====== */}
       {currentView === 'dashboard' && (
         <>
-          <div className="max-w-lg mx-auto px-3 mt-3">
-            <div className="bg-gradient-to-r from-cyan-50 to-emerald-50 border border-cyan-200 rounded-xl p-3 flex flex-wrap items-center gap-3 justify-between">
+          {/* Stats Section - Responsive */}
+          <div className="max-w-7xl mx-auto px-3 md:px-6 mt-3 md:mt-4">
+            {/* Mobile: Settings info bar */}
+            <div className="md:hidden bg-gradient-to-r from-cyan-50 to-emerald-50 border border-cyan-200 rounded-xl p-3 flex flex-wrap items-center gap-3 justify-between mb-3">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-cyan-100 flex items-center justify-center">
                   <Clock className="w-4 h-4 text-cyan-700" />
@@ -762,9 +846,76 @@ export default function Home() {
                 <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span><span className="text-gray-600">مدفوع</span></div>
               </div>
             </div>
+
+            {/* Desktop: Full stats dashboard */}
+            <div className="hidden md:grid grid-cols-4 gap-4 mb-4">
+              <Card className="border-cyan-200 bg-gradient-to-br from-cyan-50 to-white shadow-sm hover:shadow-md transition-shadow">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-cyan-100 flex items-center justify-center flex-shrink-0">
+                    <Users className="w-6 h-6 text-cyan-600" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-cyan-700">{families.length}</p>
+                    <p className="text-xs text-gray-500">إجمالي العائلات</p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50 to-white shadow-sm hover:shadow-md transition-shadow">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                    <Activity className="w-6 h-6 text-emerald-600" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-emerald-700">{activeFamilyCount}</p>
+                    <p className="text-xs text-gray-500">نشط حالياً</p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border-amber-200 bg-gradient-to-br from-amber-50 to-white shadow-sm hover:shadow-md transition-shadow">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
+                    <DollarSign className="w-6 h-6 text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-amber-700">{totalRevenue.toFixed(2)}</p>
+                    <p className="text-xs text-gray-500">إجمالي الإيرادات (شيكل)</p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border-rose-200 bg-gradient-to-br from-rose-50 to-white shadow-sm hover:shadow-md transition-shadow">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-rose-100 flex items-center justify-center flex-shrink-0">
+                    <Timer className="w-6 h-6 text-rose-600" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-rose-700">{totalMinutesUsed.toFixed(1)}</p>
+                    <p className="text-xs text-gray-500">إجمالي الدقائق المستخدمة</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Desktop: Settings info bar */}
+            <div className="hidden md:flex bg-gradient-to-r from-cyan-50/80 to-emerald-50/80 border border-cyan-200 rounded-xl p-3 items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-cyan-100 flex items-center justify-center">
+                  <Clock className="w-4 h-4 text-cyan-700" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-cyan-800">الحد المجاني: {freeMin} دقيقة/أسبوع</p>
+                  <p className="text-xs text-cyan-600">سعر الدقيقة الإضافية: {priceMin} شيكل</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 text-xs">
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-400"></span><span className="text-gray-600">مجاني</span></div>
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-amber-400"></span><span className="text-gray-600">مدفوع</span></div>
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-rose-400"></span><span className="text-gray-600">تجاوز ({totalFamiliesOverLimit} عائلة)</span></div>
+              </div>
+            </div>
           </div>
 
-          <main className="max-w-lg mx-auto px-3 py-3">
+          {/* Family Cards Grid */}
+          <main className="max-w-7xl mx-auto px-3 md:px-6 pb-6">
             {loading ? (
               <div className="flex flex-col items-center justify-center py-20 gap-4">
                 <div className="w-12 h-12 rounded-full border-4 border-cyan-200 border-t-cyan-600 animate-spin"></div>
@@ -777,7 +928,7 @@ export default function Home() {
                 <p className="text-gray-500 text-sm">اضغط على &quot;إضافة&quot; لبدء الاستخدام</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
                 {families.map((family) => {
                   const isActive = !!family.activeSessionId
                   const timerSeconds = timers[family.id] || 0
@@ -786,34 +937,35 @@ export default function Home() {
                   const usagePercent = getUsagePercentage(family)
                   const overLimit = isOverFreeLimit(family)
                   const freeRemaining = Math.max(0, freeMin - totalUsedMinutes)
+                  const isExpanded = expandedFamily === family.id
 
                   return (
                     <Card key={family.id} className={`overflow-hidden transition-all duration-300 border-2 ${isActive ? 'border-emerald-400 shadow-lg shadow-emerald-100 ring-1 ring-emerald-200' : overLimit ? 'border-amber-300 shadow-md shadow-amber-50' : 'border-gray-200 hover:border-cyan-300 hover:shadow-md hover:shadow-cyan-50'}`}>
                       {isActive && <div className="h-1 bg-gradient-to-r from-cyan-500 to-emerald-500 animate-pulse" />}
                       <CardHeader className="pb-2">
                         <div className="flex items-center justify-between">
-                          <CardTitle className="text-base flex items-center gap-2">
-                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isActive ? 'bg-emerald-100 text-emerald-600' : overLimit ? 'bg-amber-100 text-amber-600' : 'bg-cyan-100 text-cyan-600'}`}>
-                              <Droplets className="w-3.5 h-3.5" />
+                          <CardTitle className="text-sm md:text-base flex items-center gap-2">
+                            <div className={`w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center ${isActive ? 'bg-emerald-100 text-emerald-600' : overLimit ? 'bg-amber-100 text-amber-600' : 'bg-cyan-100 text-cyan-600'}`}>
+                              <Droplets className="w-3.5 h-3.5 md:w-4 md:h-4" />
                             </div>
-                            <span className="truncate max-w-[120px]">{family.name}</span>
+                            <span className="truncate max-w-[100px] md:max-w-[160px] lg:max-w-[200px]">{family.name}</span>
                           </CardTitle>
                           <div className="flex items-center gap-1">
-                            {isActive && <Badge className="bg-emerald-500 text-white text-[9px] px-1.5 py-0"><span className="w-1 h-1 rounded-full bg-white animate-pulse ml-0.5"></span>نشط</Badge>}
-                            {overLimit && !isActive && <Badge variant="destructive" className="text-[9px] px-1.5 py-0">تجاوز</Badge>}
+                            {isActive && <Badge className="bg-emerald-500 text-white text-[9px] md:text-[10px] px-1.5 py-0"><span className="w-1 h-1 rounded-full bg-white animate-pulse ml-0.5"></span>نشط</Badge>}
+                            {overLimit && !isActive && <Badge variant="destructive" className="text-[9px] md:text-[10px] px-1.5 py-0">تجاوز</Badge>}
                           </div>
                         </div>
                       </CardHeader>
                       <CardContent className="space-y-3">
-                        <div className={`text-center py-3 rounded-xl ${isActive ? 'bg-gradient-to-br from-emerald-50 to-cyan-50 border border-emerald-200' : 'bg-gray-50 border border-gray-200'}`}>
-                          <div className="text-3xl font-mono font-bold tracking-wider">
+                        <div className={`text-center py-3 md:py-4 rounded-xl ${isActive ? 'bg-gradient-to-br from-emerald-50 to-cyan-50 border border-emerald-200' : 'bg-gray-50 border border-gray-200'}`}>
+                          <div className="text-3xl md:text-4xl font-mono font-bold tracking-wider">
                             <span className={isActive ? 'text-emerald-700' : 'text-gray-700'}>{formatTime(timerSeconds)}</span>
                           </div>
-                          {isActive && <p className="text-[10px] text-emerald-600 mt-0.5">جاري التعبئة...</p>}
+                          {isActive && <p className="text-[10px] md:text-xs text-emerald-600 mt-0.5">جاري التعبئة...</p>}
                         </div>
 
                         <div className="space-y-1">
-                          <div className="flex justify-between text-[10px]">
+                          <div className="flex justify-between text-[10px] md:text-xs">
                             <span className="text-gray-500">الاستخدام المجاني</span>
                             <span className={`font-medium ${overLimit ? 'text-amber-600' : 'text-gray-700'}`}>
                               {Math.min(totalUsedMinutes, freeMin).toFixed(1)}/{freeMin} د
@@ -822,22 +974,22 @@ export default function Home() {
                           <Progress value={usagePercent} className={`h-2 ${overLimit ? '[&>div]:bg-amber-500' : '[&>div]:bg-gradient-to-r [&>div]:from-cyan-500 [&>div]:to-emerald-500'}`} />
                         </div>
 
-                        <div className="grid grid-cols-2 gap-1.5">
+                        <div className="grid grid-cols-2 gap-1.5 md:gap-2">
                           <div className="bg-white rounded-lg p-2 border border-gray-100 text-center">
-                            <p className="text-[9px] text-gray-500">المتبقي مجاناً</p>
-                            <p className={`text-xs font-bold ${freeRemaining > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                            <p className="text-[9px] md:text-[10px] text-gray-500">المتبقي مجاناً</p>
+                            <p className={`text-xs md:text-sm font-bold ${freeRemaining > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                               {freeRemaining > 0 ? `${freeRemaining.toFixed(1)} د` : 'انتهى'}
                             </p>
                           </div>
                           <div className="bg-white rounded-lg p-2 border border-gray-100 text-center">
-                            <p className="text-[9px] text-gray-500">المبلغ المستحق</p>
-                            <p className={`text-xs font-bold ${cost > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>{cost.toFixed(2)} شيكل</p>
+                            <p className="text-[9px] md:text-[10px] text-gray-500">المبلغ المستحق</p>
+                            <p className={`text-xs md:text-sm font-bold ${cost > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>{cost.toFixed(2)} شيكل</p>
                           </div>
                         </div>
 
                         {paidMinutes > 0 && (
                           <div className="bg-amber-50 rounded-lg p-2 border border-amber-200 text-center">
-                            <p className="text-[10px] text-amber-700">
+                            <p className="text-[10px] md:text-xs text-amber-700">
                               <AlertCircle className="w-2.5 h-2.5 inline ml-0.5" />
                               إضافي: <span className="font-bold">{paidMinutes.toFixed(1)}</span> د × {priceMin} شيكل
                             </p>
@@ -846,58 +998,66 @@ export default function Home() {
 
                         <Separator />
 
-                        <div className="flex gap-1.5">
+                        <div className="flex gap-1.5 md:gap-2">
                           {isActive ? (
-                            <Button onClick={() => handleStopSession(family.id, family.activeSessionId!)} className="flex-1 gap-1.5 bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600 text-white shadow-sm text-xs h-8">
+                            <Button onClick={() => handleStopSession(family.id, family.activeSessionId!)} className="flex-1 gap-1.5 bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600 text-white shadow-sm text-xs h-8 md:h-9">
                               <Pause className="w-3.5 h-3.5" />إيقاف
                             </Button>
                           ) : (
-                            <Button onClick={() => handleStartSession(family.id)} className="flex-1 gap-1.5 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white shadow-sm text-xs h-8">
-                              <Play className="w-3.5 h-3.5" />تشغيل
+                            <Button onClick={() => handleStartSession(family.id)} className="flex-1 gap-1.5 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white shadow-sm text-xs h-8 md:h-9">
+                              <Play className="w-3.5 h-3.5" />بدء
                             </Button>
                           )}
-                          <Button variant="outline" size="sm" onClick={() => openEditFamily(family)} className="gap-1 border-cyan-300 text-cyan-700 hover:text-cyan-800 hover:bg-cyan-50 hover:border-cyan-400 bg-cyan-50/50 font-semibold h-8 text-[10px]">
-                            <Pencil className="w-3 h-3" />
-                            <span>تعديل</span>
+                          <Button variant="outline" size="sm" onClick={() => openEditFamily(family)} className="gap-1 border-cyan-300 text-cyan-700 hover:text-cyan-800 hover:bg-cyan-50 hover:border-cyan-400 bg-cyan-50/50 h-8 md:h-9" title="تعديل">
+                            <Pencil className="w-3.5 h-3.5" />
                           </Button>
-                          <Button variant="outline" size="icon" onClick={() => setExpandedFamily(expandedFamily === family.id ? null : family.id)} className="border-gray-200 h-8 w-8">
-                            {expandedFamily === family.id ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                          <Button variant="outline" size="sm" onClick={() => resetWeekly(family.id, family.name)} className="gap-1 border-amber-300 text-amber-700 hover:text-amber-800 hover:bg-amber-50 hover:border-amber-400 bg-amber-50/50 h-8 md:h-9" title="إعادة تعيين">
+                            <RotateCcw className="w-3.5 h-3.5" />
                           </Button>
-                          <Button variant="outline" size="icon" onClick={() => resetWeekly(family.id, family.name)} className="border-gray-200 text-amber-600 hover:text-amber-700 hover:bg-amber-50 h-8 w-8" title="إعادة تعيين">
-                            <RefreshCw className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button variant="outline" size="icon" onClick={() => deleteFamily(family.id, family.name)} className="border-gray-200 text-red-500 hover:text-red-600 hover:bg-red-50 h-8 w-8">
+                          <Button variant="outline" size="sm" onClick={() => deleteFamily(family.id, family.name)} className="gap-1 border-red-300 text-red-700 hover:text-red-800 hover:bg-red-50 hover:border-red-400 bg-red-50/50 h-8 md:h-9" title="حذف">
                             <Trash2 className="w-3.5 h-3.5" />
                           </Button>
                         </div>
 
-                        {expandedFamily === family.id && (
-                          <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
-                            <Separator />
-                            <p className="text-[10px] font-semibold text-gray-600 flex items-center gap-1">
-                              <Timer className="w-2.5 h-2.5" />تفاصيل الأسبوع
-                            </p>
-                            <ScrollArea className="max-h-32">
-                              {family.sessions && family.sessions.length > 0 ? (
-                                <div className="space-y-1">
-                                  {family.sessions.filter((s) => s.endTime).sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()).map((session) => (
-                                    <div key={session.id} className="flex items-center justify-between text-[10px] bg-gray-50 rounded-lg px-2 py-1.5">
-                                      <div className="flex items-center gap-1">
-                                        <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500" />
-                                        <span className="text-gray-600">{formatDateTime(session.startTime)}</span>
-                                      </div>
-                                      <span className="font-medium text-gray-700">{formatTime(session.duration)}</span>
-                                    </div>
-                                  ))}
+                        {/* Expandable session history */}
+                        {family.sessions && family.sessions.filter((s) => s.endTime).length > 0 && (
+                          <div>
+                            <button
+                              onClick={() => setExpandedFamily(isExpanded ? null : family.id)}
+                              className="w-full flex items-center justify-center gap-1 text-[10px] md:text-xs text-cyan-600 hover:text-cyan-700 py-1 transition-colors"
+                            >
+                              <History className="w-3 h-3" />
+                              {isExpanded ? 'إخفاء السجل' : `عرض السجل (${family.sessions.filter((s) => s.endTime).length})`}
+                              {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                            </button>
+                            {isExpanded && (
+                              <div className="mt-2 rounded-xl border border-gray-200 overflow-hidden">
+                                <div className="overflow-x-auto max-h-40 overflow-y-auto">
+                                  <table className="w-full text-xs">
+                                    <thead>
+                                      <tr className="bg-gray-50 border-b border-gray-200">
+                                        <th className="px-2 py-1.5 text-right font-medium text-gray-600">من</th>
+                                        <th className="px-2 py-1.5 text-right font-medium text-gray-600">إلى</th>
+                                        <th className="px-2 py-1.5 text-right font-medium text-gray-600">المدة</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {family.sessions
+                                        .filter((s) => s.endTime)
+                                        .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
+                                        .slice(0, 5)
+                                        .map((session) => (
+                                          <tr key={session.id} className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50">
+                                            <td className="px-2 py-1.5 text-gray-700 font-mono whitespace-nowrap">{formatTimeOfDay(session.startTime)}</td>
+                                            <td className="px-2 py-1.5 text-gray-700 font-mono whitespace-nowrap">{session.endTime ? formatTimeOfDay(session.endTime) : '-'}</td>
+                                            <td className="px-2 py-1.5 font-mono font-medium">{formatTime(session.duration)}</td>
+                                          </tr>
+                                        ))}
+                                    </tbody>
+                                  </table>
                                 </div>
-                              ) : (
-                                <p className="text-[10px] text-gray-400 text-center py-2">لا توجد جلسات سابقة</p>
-                              )}
-                            </ScrollArea>
-                            <div className="flex justify-between text-[10px] text-gray-500 bg-gray-50 rounded-lg px-2 py-1.5">
-                              <span>إجمالي الأسبوع:</span>
-                              <span className="font-medium">{formatTime(family.weeklySeconds)}</span>
-                            </div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </CardContent>
@@ -907,16 +1067,14 @@ export default function Home() {
               </div>
             )}
           </main>
-          <footer className="mt-6 pb-4">
-            <div className="max-w-lg mx-auto px-3 text-center text-[10px] text-gray-400">نظام حساب تعبئة المياه</div>
-          </footer>
         </>
       )}
 
-      {/* LOG VIEW */}
+      {/* ====== LOG VIEW ====== */}
       {currentView === 'log' && (
-        <main className="max-w-lg mx-auto px-3 py-3">
-          <div className="grid grid-cols-2 gap-2 mb-4">
+        <main className="max-w-7xl mx-auto px-3 md:px-6 py-3 md:py-4">
+          {/* Mobile: 2x2 Stats grid */}
+          <div className="grid grid-cols-2 gap-2 mb-4 md:hidden">
             <Card className="border-cyan-200 bg-gradient-to-br from-cyan-50 to-white">
               <CardContent className="p-3 text-center">
                 <Users className="w-5 h-5 text-cyan-600 mx-auto mb-0.5" />
@@ -947,6 +1105,35 @@ export default function Home() {
             </Card>
           </div>
 
+          {/* Desktop: Stats bar inline */}
+          <div className="hidden md:grid grid-cols-4 gap-4 mb-4">
+            <Card className="border-cyan-200 bg-gradient-to-br from-cyan-50 to-white shadow-sm">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-cyan-100 flex items-center justify-center"><Users className="w-5 h-5 text-cyan-600" /></div>
+                <div><p className="text-xl font-bold text-cyan-700">{families.length}</p><p className="text-xs text-gray-500">عدد العائلات</p></div>
+              </CardContent>
+            </Card>
+            <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50 to-white shadow-sm">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center"><Timer className="w-5 h-5 text-emerald-600" /></div>
+                <div><p className="text-xl font-bold text-emerald-700">{totalMinutesUsed.toFixed(1)}</p><p className="text-xs text-gray-500">إجمالي الدقائق</p></div>
+              </CardContent>
+            </Card>
+            <Card className="border-amber-200 bg-gradient-to-br from-amber-50 to-white shadow-sm">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center"><Coins className="w-5 h-5 text-amber-600" /></div>
+                <div><p className="text-xl font-bold text-amber-700">{totalRevenue.toFixed(2)}</p><p className="text-xs text-gray-500">إجمالي المبلغ (شيكل)</p></div>
+              </CardContent>
+            </Card>
+            <Card className="border-rose-200 bg-gradient-to-br from-rose-50 to-white shadow-sm">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center"><AlertCircle className="w-5 h-5 text-rose-600" /></div>
+                <div><p className="text-xl font-bold text-rose-700">{totalFamiliesOverLimit}</p><p className="text-xs text-gray-500">تجاوزوا الحد</p></div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Search & Filter */}
           <Card className="mb-4 border-gray-200">
             <CardContent className="p-3">
               <div className="flex flex-wrap items-center gap-2">
@@ -964,7 +1151,8 @@ export default function Home() {
             </CardContent>
           </Card>
 
-          <div className="space-y-3 mb-4">
+          {/* Log entries */}
+          <div className="space-y-3 md:space-y-4 mb-4">
             {families.filter((f) => !selectedLogFamily || f.id === selectedLogFamily).filter((f) => !logSearch || f.name.includes(logSearch)).map((family) => {
               const { totalMinutes, freeMinutes: freeMinutesVal, paidMinutes: paidMinutesVal, cost } = calculateCost(family)
               const familySessions = family.sessions?.filter((s) => s.endTime) || []
@@ -972,25 +1160,25 @@ export default function Home() {
               const isActive = !!family.activeSessionId
 
               return (
-                <Card key={family.id} className={`overflow-hidden ${overLimit ? 'border-amber-300' : 'border-gray-200'}`}>
+                <Card key={family.id} className={`overflow-hidden ${overLimit ? 'border-amber-300' : 'border-gray-200'} hover:shadow-md transition-shadow`}>
                   <CardHeader className="pb-2 bg-gradient-to-l from-gray-50 to-white">
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <div className="flex items-center gap-2">
-                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${overLimit ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>
-                          <Droplets className="w-4 h-4" />
+                        <div className={`w-8 h-8 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${overLimit ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                          <Droplets className="w-4 h-4 md:w-5 md:h-5" />
                         </div>
                         <div>
-                          <CardTitle className="text-sm">{family.name}</CardTitle>
-                          <p className="text-[10px] text-gray-500">
+                          <CardTitle className="text-sm md:text-base">{family.name}</CardTitle>
+                          <p className="text-[10px] md:text-xs text-gray-500">
                             <CalendarDays className="w-2.5 h-2.5 inline ml-0.5" />
                             {formatDate(family.createdAt)}
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1.5">
                         <Button variant="outline" size="sm" onClick={() => openEditFamily(family)} className="gap-1 border-cyan-300 text-cyan-700 hover:text-cyan-800 hover:bg-cyan-50 hover:border-cyan-400 bg-cyan-50/50 font-semibold h-7 text-[10px]">
                           <Pencil className="w-3 h-3" />
-                          <span>تعديل</span>
+                          <span className="hidden sm:inline">تعديل</span>
                         </Button>
                         {isActive && <Badge className="bg-emerald-500 text-white text-[9px] gap-0.5"><span className="w-1 h-1 rounded-full bg-white animate-pulse"></span>قيد التعبئة</Badge>}
                         {overLimit ? <Badge variant="destructive" className="text-[9px]">تجاوز</Badge> : <Badge className="bg-emerald-100 text-emerald-700 text-[9px] hover:bg-emerald-100">ضمن الحد</Badge>}
@@ -998,16 +1186,16 @@ export default function Home() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="bg-cyan-50 rounded-lg p-2 text-center border border-cyan-100"><p className="text-[9px] text-cyan-600">إجمالي</p><p className="text-sm font-bold text-cyan-700">{totalMinutes.toFixed(1)}</p></div>
-                      <div className="bg-emerald-50 rounded-lg p-2 text-center border border-emerald-100"><p className="text-[9px] text-emerald-600">المجاني</p><p className="text-sm font-bold text-emerald-700">{freeMinutesVal.toFixed(1)}</p></div>
-                      <div className="bg-amber-50 rounded-lg p-2 text-center border border-amber-100"><p className="text-[9px] text-amber-600">المدفوع</p><p className="text-sm font-bold text-amber-700">{paidMinutesVal.toFixed(1)}</p></div>
-                      <div className="bg-rose-50 rounded-lg p-2 text-center border border-rose-100"><p className="text-[9px] text-rose-600">المبلغ</p><p className="text-sm font-bold text-rose-700">{cost.toFixed(2)}</p></div>
-                      <div className="bg-gray-50 rounded-lg p-2 text-center border border-gray-200"><p className="text-[9px] text-gray-500">الجلسات</p><p className="text-sm font-bold text-gray-700">{familySessions.length}</p></div>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                      <div className="bg-cyan-50 rounded-lg p-2 text-center border border-cyan-100"><p className="text-[9px] md:text-[10px] text-cyan-600">إجمالي</p><p className="text-sm font-bold text-cyan-700">{totalMinutes.toFixed(1)}</p></div>
+                      <div className="bg-emerald-50 rounded-lg p-2 text-center border border-emerald-100"><p className="text-[9px] md:text-[10px] text-emerald-600">المجاني</p><p className="text-sm font-bold text-emerald-700">{freeMinutesVal.toFixed(1)}</p></div>
+                      <div className="bg-amber-50 rounded-lg p-2 text-center border border-amber-100"><p className="text-[9px] md:text-[10px] text-amber-600">المدفوع</p><p className="text-sm font-bold text-amber-700">{paidMinutesVal.toFixed(1)}</p></div>
+                      <div className="bg-rose-50 rounded-lg p-2 text-center border border-rose-100"><p className="text-[9px] md:text-[10px] text-rose-600">المبلغ</p><p className="text-sm font-bold text-rose-700">{cost.toFixed(2)}</p></div>
+                      <div className="bg-gray-50 rounded-lg p-2 text-center border border-gray-200 col-span-2 md:col-span-1"><p className="text-[9px] md:text-[10px] text-gray-500">الجلسات</p><p className="text-sm font-bold text-gray-700">{familySessions.length}</p></div>
                     </div>
 
                     <div className="space-y-1">
-                      <div className="flex justify-between text-[10px]">
+                      <div className="flex justify-between text-[10px] md:text-xs">
                         <span className="text-gray-500">استخدام الحد المجاني</span>
                         <span className={`font-medium ${overLimit ? 'text-amber-600' : 'text-gray-700'}`}>{Math.min(totalMinutes, freeMin).toFixed(1)}/{freeMin} د</span>
                       </div>
@@ -1019,17 +1207,45 @@ export default function Home() {
                         <h4 className="text-xs font-semibold text-gray-700 mb-1.5 flex items-center gap-1">
                           <History className="w-3.5 h-3.5 text-cyan-600" />سجل الجلسات
                         </h4>
-                        <div className="rounded-xl border border-gray-200 overflow-hidden">
+                        {/* Mobile: Card list */}
+                        <div className="md:hidden space-y-2">
+                          {familySessions
+                            .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
+                            .map((session, idx) => {
+                              const sessionMinutes = session.duration / 60
+                              const sessionsBefore = familySessions.filter((s) => new Date(s.startTime).getTime() > new Date(session.startTime).getTime()).reduce((acc, s) => acc + s.duration / 60, 0)
+                              const freeRemainingBefore = Math.max(0, freeMin - Math.min(sessionsBefore, freeMin))
+                              const paidInSession = Math.max(0, sessionMinutes - freeRemainingBefore)
+                              const sessionCost = paidInSession * priceMin
+
+                              return (
+                                <div key={session.id} className="bg-gray-50 rounded-lg p-2.5 border border-gray-200">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="text-[10px] text-gray-500">جلسة #{idx + 1}</span>
+                                    {sessionCost > 0 ? <Badge variant="destructive" className="text-[9px]">{sessionCost.toFixed(2)} شيكل</Badge> : <Badge className="bg-emerald-100 text-emerald-700 text-[9px] hover:bg-emerald-100">مجاني</Badge>}
+                                  </div>
+                                  <div className="flex items-center justify-between text-xs text-gray-600">
+                                    <span className="font-mono">{formatTimeOfDay(session.startTime)}</span>
+                                    <span>→</span>
+                                    <span className="font-mono">{session.endTime ? formatTimeOfDay(session.endTime) : '-'}</span>
+                                    <span className="font-mono font-medium">{formatTime(session.duration)}</span>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                        </div>
+                        {/* Desktop: Table view */}
+                        <div className="hidden md:block rounded-xl border border-gray-200 overflow-hidden">
                           <div className="overflow-x-auto">
                             <table className="w-full text-xs">
                               <thead>
                                 <tr className="bg-gray-50 border-b border-gray-200">
-                                  <th className="px-2 py-2 text-right font-medium text-gray-600">#</th>
-                                  <th className="px-2 py-2 text-right font-medium text-gray-600">التاريخ</th>
-                                  <th className="px-2 py-2 text-right font-medium text-gray-600">من</th>
-                                  <th className="px-2 py-2 text-right font-medium text-gray-600">إلى</th>
-                                  <th className="px-2 py-2 text-right font-medium text-gray-600">المدة</th>
-                                  <th className="px-2 py-2 text-right font-medium text-gray-600">التكلفة</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-600">#</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-600">التاريخ</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-600">من</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-600">إلى</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-600">المدة</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-600">التكلفة</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -1041,16 +1257,16 @@ export default function Home() {
                                   const sessionCost = paidInSession * priceMin
 
                                   return (
-                                    <tr key={session.id} className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50">
-                                      <td className="px-2 py-1.5 text-gray-500">{idx + 1}</td>
-                                      <td className="px-2 py-1.5 text-gray-700 whitespace-nowrap">{formatDate(session.startTime)}</td>
-                                      <td className="px-2 py-1.5 text-gray-700 font-mono">{formatTimeOfDay(session.startTime)}</td>
-                                      <td className="px-2 py-1.5 text-gray-700 font-mono">{session.endTime ? formatTimeOfDay(session.endTime) : '-'}</td>
-                                      <td className="px-2 py-1.5">
+                                    <tr key={session.id} className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50 transition-colors">
+                                      <td className="px-3 py-2 text-gray-500">{idx + 1}</td>
+                                      <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{formatDate(session.startTime)}</td>
+                                      <td className="px-3 py-2 text-gray-700 font-mono">{formatTimeOfDay(session.startTime)}</td>
+                                      <td className="px-3 py-2 text-gray-700 font-mono">{session.endTime ? formatTimeOfDay(session.endTime) : '-'}</td>
+                                      <td className="px-3 py-2">
                                         <span className="font-mono font-medium">{formatTime(session.duration)}</span>
                                         <span className="text-gray-400 mr-0.5">({sessionMinutes.toFixed(1)}د)</span>
                                       </td>
-                                      <td className="px-2 py-1.5">
+                                      <td className="px-3 py-2">
                                         {sessionCost > 0 ? <Badge variant="destructive" className="text-[9px]">{sessionCost.toFixed(2)}</Badge> : <Badge className="bg-emerald-100 text-emerald-700 text-[9px] hover:bg-emerald-100">مجاني</Badge>}
                                       </td>
                                     </tr>
@@ -1069,7 +1285,7 @@ export default function Home() {
           </div>
 
           <footer className="mt-6 pb-4">
-            <div className="text-center text-[10px] text-gray-400">نظام حساب تعبئة المياه - سجل التعبئة</div>
+            <div className="text-center text-[10px] md:text-xs text-gray-400">نظام حساب تعبئة المياه - سجل التعبئة</div>
           </footer>
         </main>
       )}
