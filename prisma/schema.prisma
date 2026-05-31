@@ -8,6 +8,9 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// NOTE: If DIRECT_URL is not set, Prisma will use DATABASE_URL for both
+// Set DIRECT_URL only when using Neon with PgBouncer connection pooling
+
 model User {
   id            String    @id @default(cuid())
   name          String?
