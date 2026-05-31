@@ -92,7 +92,7 @@ export async function sendVerificationEmail({ email, code, name, apiKey }: SendV
 
   try {
     const { error } = await getResend(apiKey).emails.send({
-      from: 'تعبئة المياه <onboarding@resend.dev>',
+      from: 'Water Filling App <onboarding@resend.dev>',
       to: email,
       subject: `رمز التحقق - تعبئة المياه | Verification Code`,
       html,
@@ -143,24 +143,33 @@ export async function saveVerificationToken(email: string, code: string) {
 }
 
 /**
- * Get the Resend API key from database settings or environment variable
+ * Get the Resend API key from environment variable or database settings
+ * Checks: 1) env var, 2) specific user's settings, 3) any user's settings (global fallback)
  */
 export async function getResendApiKey(userId?: string): Promise<string | null> {
   // First check environment variable
   const envKey = process.env.RESEND_API_KEY
   if (envKey) return envKey
 
-  // Then check database if userId is provided
-  if (userId) {
-    try {
-      const { db } = await import('@/lib/db')
+  try {
+    const { db } = await import('@/lib/db')
+
+    // Check specific user's settings if userId is provided
+    if (userId) {
       const settings = await db.settings.findUnique({
         where: { userId },
       })
       if (settings?.resendApiKey) return settings.resendApiKey
-    } catch {
-      // Database might not be available
     }
+
+    // Global fallback: find any settings record that has a resendApiKey
+    const anySettings = await db.settings.findFirst({
+      where: { resendApiKey: { not: null } },
+      select: { resendApiKey: true },
+    })
+    if (anySettings?.resendApiKey) return anySettings.resendApiKey
+  } catch {
+    // Database might not be available
   }
 
   return null

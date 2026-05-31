@@ -70,6 +70,8 @@ export async function POST(request: Request) {
         pricePerMinute: 0.5,
         autoResetWeekly: true,
         resetDay: 6,
+        // Copy the global Resend API key so new users also have it
+        resendApiKey: apiKey || undefined,
       },
     })
 
