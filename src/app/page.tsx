@@ -46,6 +46,7 @@ import {
   DollarSign,
   LogOut,
   User,
+  Mail,
 } from 'lucide-react'
 
 // Types - renamed FillingSession to avoid conflict with next-auth Session
@@ -71,6 +72,7 @@ interface AppSettings {
   autoResetWeekly: boolean
   resetDay: number
   lastAutoReset: string | null
+  resendApiKey?: string | null
 }
 
 interface FamilyWithUsage extends Family {
@@ -106,14 +108,14 @@ export default function Home() {
   const { data: session, status: sessionStatus } = useSession()
   const { t, locale, dir } = useLanguage()
   const [families, setFamilies] = useState<FamilyWithUsage[]>([])
-  const [settings, setSettings] = useState<AppSettings>({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, resetDay: 6, lastAutoReset: null })
+  const [settings, setSettings] = useState<AppSettings>({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, resetDay: 6, lastAutoReset: null, resendApiKey: null })
   const [newFamilyName, setNewFamilyName] = useState('')
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const [editFamilyDialogOpen, setEditFamilyDialogOpen] = useState(false)
   const [editingFamily, setEditingFamily] = useState<{ id: string; name: string } | null>(null)
   const [editFamilyName, setEditFamilyName] = useState('')
-  const [settingsForm, setSettingsForm] = useState<AppSettings>({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, resetDay: 6, lastAutoReset: null })
+  const [settingsForm, setSettingsForm] = useState<AppSettings>({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, resetDay: 6, lastAutoReset: null, resendApiKey: null })
   const [timers, setTimers] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [expandedFamily, setExpandedFamily] = useState<string | null>(null)
@@ -460,7 +462,7 @@ export default function Home() {
         }),
       })
       if (!res.ok) throw new Error()
-      setSettingsForm({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, resetDay: 6, lastAutoReset: null })
+      setSettingsForm({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, resetDay: 6, lastAutoReset: null, resendApiKey: settingsForm.resendApiKey })
       await refreshFamilies()
       showToast('info', t('restoreDefaultsSuccess'))
     } catch {
@@ -850,6 +852,36 @@ export default function Home() {
                   {settingsForm.autoResetWeekly ? `${t('autoResetOn')} ${dayNames[settingsForm.resetDay ?? 6]}` : t('autoResetManual')}
                 </span>
               </div>
+            </div>
+
+            {/* Email Settings */}
+            <Separator />
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                <Mail className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+                {t('emailSettings')}
+              </Label>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[10px] text-gray-400 dark:text-gray-500">{t('emailServiceStatus')}:</span>
+                <span className={`text-[10px] font-bold ${settingsForm.resendApiKey ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                  {settingsForm.resendApiKey ? t('emailServiceActive') : t('emailServiceInactive')}
+                </span>
+              </div>
+              <Input
+                type="password"
+                placeholder={t('resendApiKeyPlaceholder')}
+                value={settingsForm.resendApiKey || ''}
+                onChange={(e) => setSettingsForm((prev) => ({ ...prev, resendApiKey: e.target.value || null }))}
+                className="text-sm"
+                dir="ltr"
+              />
+              <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                {t('resendApiKeyDesc')}
+                {' · '}
+                <a href="https://resend.com/signup" target="_blank" rel="noopener noreferrer" className="text-cyan-500 hover:text-cyan-600 dark:hover:text-cyan-300 underline">
+                  {t('getResendKey')}
+                </a>
+              </p>
             </div>
           </div>
           <DialogFooter className="gap-2">

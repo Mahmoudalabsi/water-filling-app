@@ -63,6 +63,7 @@ export async function PUT(request: Request) {
         autoResetWeekly: typeof body.autoResetWeekly === 'boolean' ? body.autoResetWeekly : settings.autoResetWeekly,
         resetDay: typeof body.resetDay === 'number' ? body.resetDay : settings.resetDay,
         lastAutoReset: body.lastAutoReset !== undefined ? (body.lastAutoReset ? new Date(body.lastAutoReset) : null) : settings.lastAutoReset,
+        resendApiKey: body.resendApiKey !== undefined ? body.resendApiKey : settings.resendApiKey,
       },
     })
 

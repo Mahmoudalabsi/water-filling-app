@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
-import { generateVerificationCode, saveVerificationToken, sendVerificationEmail } from '@/lib/email'
+import { generateVerificationCode, saveVerificationToken, sendVerificationEmail, getResendApiKey } from '@/lib/email'
 
 export async function POST(request: Request) {
   try {
@@ -48,8 +48,9 @@ export async function POST(request: Request) {
 
     const hashedPassword = await bcrypt.hash(password, 12)
 
-    // Check if email verification is available (RESEND_API_KEY is set)
-    const hasEmailService = !!process.env.RESEND_API_KEY
+    // Check if email verification is available (API key in env or database)
+    const apiKey = await getResendApiKey()
+    const hasEmailService = !!apiKey
 
     // Create user - if email service is not available, auto-verify
     const user = await db.user.create({
@@ -82,11 +83,11 @@ export async function POST(request: Request) {
           email,
           code,
           name,
+          apiKey: apiKey || undefined,
         })
 
         if (!emailResult.success) {
           console.error('Failed to send verification email:', emailResult.error)
-          // Still return success for registration, but indicate email issue
           return NextResponse.json({
             success: true,
             requiresVerification: true,
@@ -105,7 +106,6 @@ export async function POST(request: Request) {
         }, { status: 201 })
       } catch (emailError) {
         console.error('Email service error:', emailError)
-        // If email fails, still allow registration but require verification later
         return NextResponse.json({
           success: true,
           requiresVerification: true,

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { generateVerificationCode, saveVerificationToken, sendVerificationEmail } from '@/lib/email'
+import { generateVerificationCode, saveVerificationToken, sendVerificationEmail, getResendApiKey } from '@/lib/email'
 
 export async function POST(request: Request) {
   try {
@@ -35,7 +35,8 @@ export async function POST(request: Request) {
     }
 
     // Check if email service is configured
-    if (!process.env.RESEND_API_KEY) {
+    const apiKey = await getResendApiKey(user.id)
+    if (!apiKey) {
       return NextResponse.json(
         { error: 'خدمة تأكيد البريد الإلكتروني غير متاحة حالياً' },
         { status: 503 }
@@ -67,6 +68,7 @@ export async function POST(request: Request) {
       email,
       code,
       name: user.name || undefined,
+      apiKey,
     })
 
     if (!emailResult.success) {

@@ -232,4 +232,18 @@ export const en: Record<TranslationKeys, string> = {
   emailSendError: 'Error sending verification email',
   registrationSuccessVerify: 'Account created. Please verify your email',
   checkInbox: 'Check your inbox and spam folder',
+
+  // Email Settings
+  emailSettings: 'Email Settings',
+  resendApiKeyLabel: 'Resend API Key',
+  resendApiKeyDesc: 'Email sending service API key (from resend.com)',
+  resendApiKeyPlaceholder: 'Enter Resend API key...',
+  resendApiKeySaved: 'Email API key saved',
+  emailServiceActive: 'Email service is active',
+  emailServiceInactive: 'Email service is not configured',
+  emailServiceStatus: 'Email service status',
+  testEmail: 'Test Email',
+  testEmailSent: 'Test email sent',
+  testEmailError: 'Error sending test email',
+  getResendKey: 'Get a free key from resend.com',
 }

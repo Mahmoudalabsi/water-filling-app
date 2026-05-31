@@ -230,6 +230,20 @@ export const ar = {
   emailSendError: 'حدث خطأ في إرسال بريد التحقق',
   registrationSuccessVerify: 'تم إنشاء الحساب. يرجى التحقق من بريدك الإلكتروني',
   checkInbox: 'تحقق من صندوق الوارد والبريد غير المرغوب فيه',
+
+  // Email Settings
+  emailSettings: 'إعدادات البريد الإلكتروني',
+  resendApiKeyLabel: 'مفتاح Resend API',
+  resendApiKeyDesc: 'مفتاح خدمة إرسال البريد الإلكتروني (من resend.com)',
+  resendApiKeyPlaceholder: 'أدخل مفتاح Resend API...',
+  resendApiKeySaved: 'تم حفظ مفتاح البريد الإلكتروني',
+  emailServiceActive: 'خدمة البريد الإلكتروني مفعّلة',
+  emailServiceInactive: 'خدمة البريد الإلكتروني غير مفعّلة',
+  emailServiceStatus: 'حالة خدمة البريد',
+  testEmail: 'اختبار البريد',
+  testEmailSent: 'تم إرسال بريد اختبار',
+  testEmailError: 'حدث خطأ في إرسال بريد الاختبار',
+  getResendKey: 'احصل على مفتاح مجاني من resend.com',
 }
 
 export type TranslationKeys = keyof typeof ar

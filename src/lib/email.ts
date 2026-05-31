@@ -2,13 +2,16 @@ import { Resend } from 'resend'
 
 // Lazy-initialize Resend to avoid build-time errors when API key is not available
 let _resend: Resend | null = null
-function getResend(): Resend {
-  if (!_resend) {
-    const apiKey = process.env.RESEND_API_KEY
-    if (!apiKey) {
-      throw new Error('RESEND_API_KEY environment variable is not set')
+let _lastApiKey: string | null = null
+
+function getResend(apiKey?: string): Resend {
+  const key = apiKey || process.env.RESEND_API_KEY || ''
+  if (!_resend || _lastApiKey !== key) {
+    if (!key) {
+      throw new Error('RESEND_API_KEY is not configured')
     }
-    _resend = new Resend(apiKey)
+    _resend = new Resend(key)
+    _lastApiKey = key
   }
   return _resend
 }
@@ -20,9 +23,10 @@ interface SendVerificationEmailParams {
   email: string
   code: string
   name?: string
+  apiKey?: string
 }
 
-export async function sendVerificationEmail({ email, code, name }: SendVerificationEmailParams) {
+export async function sendVerificationEmail({ email, code, name, apiKey }: SendVerificationEmailParams) {
   const userName = name || email.split('@')[0]
 
   // Arabic and bilingual email
@@ -87,7 +91,7 @@ export async function sendVerificationEmail({ email, code, name }: SendVerificat
   `
 
   try {
-    const { error } = await getResend().emails.send({
+    const { error } = await getResend(apiKey).emails.send({
       from: 'تعبئة المياه <onboarding@resend.dev>',
       to: email,
       subject: `رمز التحقق - تعبئة المياه | Verification Code`,
@@ -136,4 +140,36 @@ export async function saveVerificationToken(email: string, code: string) {
   })
 
   return { code, expires }
+}
+
+/**
+ * Get the Resend API key from database settings or environment variable
+ */
+export async function getResendApiKey(userId?: string): Promise<string | null> {
+  // First check environment variable
+  const envKey = process.env.RESEND_API_KEY
+  if (envKey) return envKey
+
+  // Then check database if userId is provided
+  if (userId) {
+    try {
+      const { db } = await import('@/lib/db')
+      const settings = await db.settings.findUnique({
+        where: { userId },
+      })
+      if (settings?.resendApiKey) return settings.resendApiKey
+    } catch {
+      // Database might not be available
+    }
+  }
+
+  return null
+}
+
+/**
+ * Check if email verification is available (has API key)
+ */
+export async function isEmailVerificationAvailable(userId?: string): Promise<boolean> {
+  const key = await getResendApiKey(userId)
+  return !!key
 }

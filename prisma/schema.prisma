@@ -97,6 +97,7 @@ model Settings {
   autoResetWeekly    Boolean   @default(true) @map("auto_reset_weekly")
   resetDay           Int       @default(6) @map("reset_day")
   lastAutoReset      DateTime? @map("last_auto_reset")
+  resendApiKey       String?   @map("resend_api_key")
 
   @@unique([userId])
   @@map("settings")
