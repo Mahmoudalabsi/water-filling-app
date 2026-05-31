@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getCurrentUser } from '@/lib/auth'
 
 // POST /api/families/[id]/start - start a new session
 export async function POST(
@@ -7,15 +8,20 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const user = await getCurrentUser()
+    if (!user?.id) {
+      return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
+    }
+
     const { id } = await params
 
-    // Check family exists
+    // Check family exists and belongs to user
     const family = await db.family.findUnique({
       where: { id },
       include: { sessions: true },
     })
 
-    if (!family) {
+    if (!family || family.userId !== user.id) {
       return NextResponse.json({ error: 'العائلة غير موجودة' }, { status: 404 })
     }
 
@@ -25,7 +31,7 @@ export async function POST(
       return NextResponse.json({ error: 'يوجد جلسة نشطة بالفعل لهذه العائلة' }, { status: 400 })
     }
 
-    const session = await db.session.create({
+    const session = await db.fillingSession.create({
       data: {
         familyId: id,
         startTime: new Date(),

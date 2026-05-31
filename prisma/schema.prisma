@@ -7,28 +7,82 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Family {
-  id        String    @id @default(cuid())
-  name      String
-  createdAt DateTime  @default(now())
-  sessions  Session[]
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  password      String?
+  image         String?
+  createdAt     DateTime  @default(now())
+  accounts      Account[]
+  sessions      AuthSession[]
+  families      Family[]
+  settings      Settings[]
 }
 
-model Session {
-  id        String    @id @default(cuid())
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model AuthSession {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Family {
+  id        String          @id @default(cuid())
+  name      String
+  createdAt DateTime        @default(now())
+  userId    String
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions  FillingSession[]
+}
+
+model FillingSession {
+  id        String   @id @default(cuid())
   familyId  String
-  family    Family    @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  family    Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
   startTime DateTime
   endTime   DateTime?
-  duration  Int       @default(0) // duration in seconds
-  createdAt DateTime  @default(now())
+  duration  Int      @default(0)
+  createdAt DateTime @default(now())
 }
 
 model Settings {
-  id                String    @id @default(cuid())
-  freeMinutesPerWeek Int      @default(12)
-  pricePerMinute    Float    @default(0.5)
-  autoResetWeekly   Boolean  @default(true)
-  resetDay          Int      @default(6) // 0=Sunday, 1=Monday, ..., 6=Saturday
-  lastAutoReset     DateTime?
+  id                 String    @id @default(cuid())
+  userId             String
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  freeMinutesPerWeek Int       @default(12)
+  pricePerMinute     Float     @default(0.5)
+  autoResetWeekly    Boolean   @default(true)
+  resetDay           Int       @default(6)
+  lastAutoReset      DateTime?
+
+  @@unique([userId])
 }

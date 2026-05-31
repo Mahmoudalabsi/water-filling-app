@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getCurrentUser } from '@/lib/auth'
 
 // PUT /api/families/[id] - update family name
 export async function PUT(
@@ -7,12 +8,23 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const user = await getCurrentUser()
+    if (!user?.id) {
+      return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
+    }
+
     const { id } = await params
     const body = await request.json()
     const { name } = body
 
     if (!name || typeof name !== 'string' || !name.trim()) {
       return NextResponse.json({ error: 'اسم العائلة مطلوب' }, { status: 400 })
+    }
+
+    // Verify ownership
+    const existing = await db.family.findUnique({ where: { id } })
+    if (!existing || existing.userId !== user.id) {
+      return NextResponse.json({ error: 'العائلة غير موجودة' }, { status: 404 })
     }
 
     const family = await db.family.update({
@@ -34,11 +46,20 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const user = await getCurrentUser()
+    if (!user?.id) {
+      return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
+    }
+
     const { id } = await params
 
-    await db.family.delete({
-      where: { id },
-    })
+    // Verify ownership
+    const existing = await db.family.findUnique({ where: { id } })
+    if (!existing || existing.userId !== user.id) {
+      return NextResponse.json({ error: 'العائلة غير موجودة' }, { status: 404 })
+    }
+
+    await db.family.delete({ where: { id } })
 
     return NextResponse.json({ success: true })
   } catch (error) {

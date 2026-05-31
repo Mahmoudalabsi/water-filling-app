@@ -88,3 +88,41 @@ Stage Summary:
 - Database has 6 families with session data
 - App serves correctly through Caddy proxy
 - Responsive design confirmed in code
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Add authentication system + offline support + remove demo data
+
+Work Log:
+- Deleted all demo data from SQLite database (6 families + sessions)
+- Updated Prisma schema: Added User, Account, AuthSession, VerificationToken models
+- Renamed Session to FillingSession to avoid conflict with NextAuth
+- Added userId foreign key to Family and Settings models
+- Added @@unique([userId]) constraint to Settings
+- Installed bcryptjs, @next-auth/prisma-adapter, @types/bcryptjs
+- Created /src/lib/auth.ts with NextAuth configuration (Google + Credentials)
+- Created /src/app/api/auth/[...nextauth]/route.ts
+- Created /src/app/api/auth/register/route.ts
+- Created /src/components/auth-provider.tsx (SessionProvider wrapper)
+- Created /src/app/signin/page.tsx (beautiful Arabic RTL login/register)
+- Updated layout.tsx to wrap with AuthProvider
+- Updated ALL API routes to filter by userId (families, settings, reset-all, etc.)
+- Added getCurrentUser() helper function
+- All API routes return 401 if user not authenticated
+- Page.tsx already has auth integration (useSession, signOut, redirect)
+- Updated service worker (sw.js) v5 for offline-first with background sync
+- Updated manifest.json orientation to "any" for all devices
+- Updated layout.tsx to remove portrait-only restriction
+- Added NEXTAUTH_SECRET and NEXTAUTH_URL to .env
+- Lint passes successfully
+- Register API tested and working
+
+Stage Summary:
+- Full authentication system with Google OAuth + email/password
+- Each user has their own data (families, settings, sessions)
+- Sign-in page with beautiful Arabic RTL design
+- User avatar and logout button in header
+- Offline support via service worker with cache-first strategy
+- Background sync when coming back online
+- All devices supported (portrait + landscape)

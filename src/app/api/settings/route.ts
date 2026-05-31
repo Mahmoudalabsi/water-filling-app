@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getCurrentUser } from '@/lib/auth'
 
 const DEFAULT_SETTINGS = {
   freeMinutesPerWeek: 12,
@@ -9,14 +10,21 @@ const DEFAULT_SETTINGS = {
   lastAutoReset: null as Date | null,
 }
 
-// GET /api/settings - get settings (create default if not exists)
+// GET /api/settings - get settings for current user
 export async function GET() {
   try {
-    let settings = await db.settings.findFirst()
+    const user = await getCurrentUser()
+    if (!user?.id) {
+      return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
+    }
+
+    let settings = await db.settings.findUnique({
+      where: { userId: user.id },
+    })
 
     if (!settings) {
       settings = await db.settings.create({
-        data: DEFAULT_SETTINGS,
+        data: { ...DEFAULT_SETTINGS, userId: user.id },
       })
     }
 
@@ -27,14 +35,21 @@ export async function GET() {
   }
 }
 
-// PUT /api/settings - update settings
+// PUT /api/settings - update settings for current user
 export async function PUT(request: Request) {
   try {
-    let settings = await db.settings.findFirst()
+    const user = await getCurrentUser()
+    if (!user?.id) {
+      return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
+    }
+
+    let settings = await db.settings.findUnique({
+      where: { userId: user.id },
+    })
 
     if (!settings) {
       settings = await db.settings.create({
-        data: DEFAULT_SETTINGS,
+        data: { ...DEFAULT_SETTINGS, userId: user.id },
       })
     }
 

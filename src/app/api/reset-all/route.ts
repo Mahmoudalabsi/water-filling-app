@@ -1,20 +1,26 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getCurrentUser } from '@/lib/auth'
 
-// POST /api/reset-all - reset all weekly usage, with optional auto-reset check
+// POST /api/reset-all - reset all weekly usage for current user
 export async function POST(request: Request) {
   try {
+    const user = await getCurrentUser()
+    if (!user?.id) {
+      return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
+    }
+
     const body = await request.json()
     const { checkAutoReset } = body
 
     if (checkAutoReset) {
-      // Auto-reset check mode
-      const settings = await db.settings.findFirst()
+      const settings = await db.settings.findUnique({
+        where: { userId: user.id },
+      })
       if (!settings || !settings.autoResetWeekly) {
         return NextResponse.json({ didReset: false })
       }
 
-      // Calculate week start based on the selected reset day
       const now = new Date()
       const dayOfWeek = now.getDay()
       const resetDay = settings.resetDay ?? 6
@@ -26,8 +32,16 @@ export async function POST(request: Request) {
       const lastReset = settings.lastAutoReset
 
       if (!lastReset || new Date(lastReset) < weekStart) {
-        // Need to auto-reset
-        await db.session.deleteMany({})
+        // Delete only sessions for this user's families
+        const userFamilyIds = await db.family.findMany({
+          where: { userId: user.id },
+          select: { id: true },
+        })
+        const familyIds = userFamilyIds.map(f => f.id)
+
+        await db.fillingSession.deleteMany({
+          where: { familyId: { in: familyIds } },
+        })
 
         await db.settings.update({
           where: { id: settings.id },
@@ -40,11 +54,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ didReset: false })
     }
 
-    // Manual reset all mode
-    await db.session.deleteMany({})
+    // Manual reset all mode - only for current user's families
+    const userFamilyIds = await db.family.findMany({
+      where: { userId: user.id },
+      select: { id: true },
+    })
+    const familyIds = userFamilyIds.map(f => f.id)
 
-    // Update last auto reset time
-    const settings = await db.settings.findFirst()
+    await db.fillingSession.deleteMany({
+      where: { familyId: { in: familyIds } },
+    })
+
+    const settings = await db.settings.findUnique({
+      where: { userId: user.id },
+    })
     if (settings) {
       await db.settings.update({
         where: { id: settings.id },

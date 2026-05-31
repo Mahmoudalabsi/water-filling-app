@@ -1,10 +1,17 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getCurrentUser } from '@/lib/auth'
 
-// GET /api/families - list all families with sessions
+// GET /api/families - list all families for current user
 export async function GET() {
   try {
+    const user = await getCurrentUser()
+    if (!user?.id) {
+      return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
+    }
+
     const families = await db.family.findMany({
+      where: { userId: user.id },
       include: { sessions: true },
       orderBy: { createdAt: 'desc' },
     })
@@ -18,6 +25,11 @@ export async function GET() {
 // POST /api/families - add a new family
 export async function POST(request: Request) {
   try {
+    const user = await getCurrentUser()
+    if (!user?.id) {
+      return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
+    }
+
     const body = await request.json()
     const { name } = body
 
@@ -26,7 +38,7 @@ export async function POST(request: Request) {
     }
 
     const family = await db.family.create({
-      data: { name: name.trim() },
+      data: { name: name.trim(), userId: user.id },
       include: { sessions: true },
     })
 

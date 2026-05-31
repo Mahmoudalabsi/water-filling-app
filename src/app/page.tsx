@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useSession, signOut } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -40,10 +41,12 @@ import {
   TrendingUp,
   Activity,
   DollarSign,
+  LogOut,
+  User,
 } from 'lucide-react'
 
-// Types from store (kept for compatibility)
-interface Session {
+// Types - renamed FillingSession to avoid conflict with next-auth Session
+interface FillingSession {
   id: string
   familyId: string
   startTime: string
@@ -56,7 +59,7 @@ interface Family {
   id: string
   name: string
   createdAt: string
-  sessions: Session[]
+  sessions: FillingSession[]
 }
 
 interface AppSettings {
@@ -97,6 +100,7 @@ interface ConfirmState {
 }
 
 export default function Home() {
+  const { data: session, status: sessionStatus } = useSession()
   const [families, setFamilies] = useState<FamilyWithUsage[]>([])
   const [settings, setSettings] = useState<AppSettings>({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, resetDay: 6, lastAutoReset: null })
   const [newFamilyName, setNewFamilyName] = useState('')
@@ -261,12 +265,14 @@ export default function Home() {
 
   useEffect(() => {
     const init = async () => {
-      await refreshFamilies()
+      if (sessionStatus === 'authenticated') {
+        await refreshFamilies()
+      }
       setLoading(false)
     }
     init()
     return () => { Object.values(timerIntervals.current).forEach(clearInterval) }
-  }, [refreshFamilies])
+  }, [refreshFamilies, sessionStatus])
 
   // Family operations via API
   const addFamily = async () => {
@@ -524,6 +530,37 @@ export default function Home() {
     info: { icon: Info, bg: 'bg-cyan-50', border: 'border-cyan-200', iconColor: 'text-cyan-600', textColor: 'text-cyan-800' },
   }
 
+  // Show loading while session is being checked
+  if (sessionStatus === 'loading' || loading) {
+    return (
+      <div dir="rtl" className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-emerald-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center shadow-xl shadow-cyan-200 mx-auto mb-4 animate-pulse">
+            <Droplets className="w-8 h-8 text-white" />
+          </div>
+          <p className="text-gray-500 text-sm">جاري التحميل...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Redirect to signin if not authenticated
+  if (sessionStatus === 'unauthenticated') {
+    if (typeof window !== 'undefined') {
+      window.location.href = '/signin'
+    }
+    return (
+      <div dir="rtl" className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-emerald-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center shadow-xl shadow-cyan-200 mx-auto mb-4">
+            <Droplets className="w-8 h-8 text-white" />
+          </div>
+          <p className="text-gray-500 text-sm">جاري التحويل لصفحة الدخول...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div dir="rtl" className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-emerald-50">
       {/* ====== TOAST NOTIFICATIONS ====== */}
@@ -677,6 +714,32 @@ export default function Home() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+
+            {/* User Menu */}
+            {session?.user && (
+              <div className="flex items-center gap-1.5">
+                <div className="hidden sm:flex items-center gap-1.5 bg-gradient-to-r from-cyan-50 to-emerald-50 border border-cyan-200 rounded-lg px-2 py-1">
+                  {session.user.image ? (
+                    <img src={session.user.image} alt={session.user.name || ''} className="w-5 h-5 rounded-full" />
+                  ) : (
+                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center">
+                      <User className="w-3 h-3 text-white" />
+                    </div>
+                  )}
+                  <span className="text-[11px] font-medium text-gray-700 max-w-[80px] truncate">{session.user.name || session.user.email}</span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => signOut({ callbackUrl: '/signin' })}
+                  className="gap-1 text-xs border-gray-200 text-gray-500 hover:text-red-600 hover:bg-red-50 hover:border-red-300 h-7 px-2"
+                  title="تسجيل الخروج"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span className="hidden md:inline">خروج</span>
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       </header>
