@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -14,37 +14,42 @@ model User {
   emailVerified DateTime?
   password      String?
   image         String?
-  createdAt     DateTime  @default(now())
+  createdAt     DateTime  @default(now()) @map("created_at")
   accounts      Account[]
   sessions      AuthSession[]
   families      Family[]
   settings      Settings[]
+
+  @@map("users")
 }
 
 model Account {
   id                String  @id @default(cuid())
-  userId            String
+  userId            String  @map("user_id")
   type              String
   provider          String
-  providerAccountId String
+  providerAccountId String  @map("provider_account_id")
   refresh_token     String?
   access_token      String?
   expires_at        Int?
-  token_type        String?
+  token_type        String? @map("token_type")
   scope             String?
-  id_token          String?
-  session_state     String?
+  id_token          String? @map("id_token")
+  session_state     String? @map("session_state")
   user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@map("accounts")
 }
 
 model AuthSession {
   id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("auth_sessions")
 }
 
 model VerificationToken {
@@ -53,36 +58,42 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+  @@map("verification_tokens")
 }
 
 model Family {
   id        String          @id @default(cuid())
   name      String
-  createdAt DateTime        @default(now())
-  userId    String
+  createdAt DateTime        @default(now()) @map("created_at")
+  userId    String          @map("user_id")
   user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   sessions  FillingSession[]
+
+  @@map("families")
 }
 
 model FillingSession {
   id        String   @id @default(cuid())
-  familyId  String
+  familyId  String   @map("family_id")
   family    Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
-  startTime DateTime
-  endTime   DateTime?
+  startTime DateTime @map("start_time")
+  endTime   DateTime? @map("end_time")
   duration  Int      @default(0)
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("filling_sessions")
 }
 
 model Settings {
   id                 String    @id @default(cuid())
-  userId             String
+  userId             String    @map("user_id")
   user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  freeMinutesPerWeek Int       @default(12)
-  pricePerMinute     Float     @default(0.5)
-  autoResetWeekly    Boolean   @default(true)
-  resetDay           Int       @default(6)
-  lastAutoReset      DateTime?
+  freeMinutesPerWeek Int       @default(12) @map("free_minutes_per_week")
+  pricePerMinute     Float     @default(0.5) @map("price_per_minute")
+  autoResetWeekly    Boolean   @default(true) @map("auto_reset_weekly")
+  resetDay           Int       @default(6) @map("reset_day")
+  lastAutoReset      DateTime? @map("last_auto_reset")
 
   @@unique([userId])
+  @@map("settings")
 }

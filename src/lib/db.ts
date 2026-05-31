@@ -4,16 +4,12 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
-// In development, always create a fresh client to pick up schema changes
-// The global caching only benefits production
 const createPrismaClient = () => {
-  return new PrismaClient({
-    log: ['query'],
-  })
+  return new PrismaClient()
 }
 
-export const db = process.env.NODE_ENV === 'production'
-  ? (globalForPrisma.prisma ?? createPrismaClient())
-  : createPrismaClient()
+// Reuse Prisma client in development to avoid connection pool exhaustion
+// In production (Vercel serverless), create new client per cold start
+export const db = globalForPrisma.prisma ?? createPrismaClient()
 
-if (process.env.NODE_ENV === 'production') globalForPrisma.prisma = db
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
