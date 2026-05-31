@@ -1,7 +1,9 @@
 #!/bin/bash
-cd /home/z/my-project
 while true; do
-  node node_modules/.bin/next start -p 3000 -H 0.0.0.0 2>&1
-  echo "[$(date)] Server exited, restarting in 3s..." >> /tmp/next-restart.log
-  sleep 3
+  if ! curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000 | grep -q "200"; then
+    cd /home/z/my-project
+    PORT=3000 HOSTNAME=0.0.0.0 node .next/standalone/server.js &
+    sleep 5
+  fi
+  sleep 10
 done
