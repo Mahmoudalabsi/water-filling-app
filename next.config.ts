@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  serverExternalPackages: ['bcryptjs'],
 };
 
 export default nextConfig;

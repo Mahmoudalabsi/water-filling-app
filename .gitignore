@@ -50,5 +50,37 @@ test
 prompt
 
 server.log
+
 # Skills directory
 /skills/
+
+# Database
+/db/
+*.db
+*.db-journal
+
+# Android build
+/android/
+
+# Download directory
+/download/
+
+# Upload directory
+/upload/
+
+# Examples
+/examples/
+
+# Keep-alive scripts
+keep-alive.sh
+keep-server-alive.sh
+start-server.sh
+serve-standalone.sh
+Caddyfile
+
+# Worklog
+worklog.md
+
+# Zscripts logs
+.zscripts/*.log
+.zscripts/dev.pid

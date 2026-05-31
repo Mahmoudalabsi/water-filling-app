@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">تعبئة المياه</string>
-    <string name="title_activity_main">تعبئة المياه</string>
-    <string name="package_name">com.waterfilling.app</string>
-    <string name="custom_url_scheme">com.waterfilling.app</string>
-</resources>
