@@ -246,4 +246,15 @@ export const en: Record<TranslationKeys, string> = {
   testEmailSent: 'Test email sent',
   testEmailError: 'Error sending test email',
   getResendKey: 'Get a free key from resend.com',
+
+  // Offline
+  offlineMode: 'Offline Mode',
+  pendingOperations: 'pending',
+  usingCachedData: 'Using cached data',
+  operationQueued: 'Operation queued for sync',
+  syncing: 'Syncing...',
+  syncComplete: 'Sync complete',
+  syncFailed: 'Sync failed',
+  backOnline: 'Back online',
+  syncNow: 'Sync now',
 }

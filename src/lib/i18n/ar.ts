@@ -244,6 +244,17 @@ export const ar = {
   testEmailSent: 'تم إرسال بريد اختبار',
   testEmailError: 'حدث خطأ في إرسال بريد الاختبار',
   getResendKey: 'احصل على مفتاح مجاني من resend.com',
+
+  // Offline
+  offlineMode: 'وضع عدم الاتصال',
+  pendingOperations: 'عمليات معلقة',
+  usingCachedData: 'يتم استخدام البيانات المحفوظة',
+  operationQueued: 'تم حفظ العملية وسيتم تنفيذها عند الاتصال',
+  syncing: 'جاري المزامنة...',
+  syncComplete: 'تمت المزامنة',
+  syncFailed: 'فشلت المزامنة',
+  backOnline: 'تم الاتصال بالإنترنت',
+  syncNow: 'مزامنة الآن',
 }
 
 export type TranslationKeys = keyof typeof ar

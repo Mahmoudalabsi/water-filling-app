@@ -1,4 +1,4 @@
-const CACHE_NAME = 'water-filling-v2'
+const CACHE_NAME = 'water-filling-v3'
 const STATIC_ASSETS = [
   '/',
   '/signin',
@@ -47,14 +47,29 @@ async function syncPendingFromSW() {
   })
 }
 
+// Handle messages from client
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting()
+  }
+  if (event.data && event.data.type === 'CACHE_URLS') {
+    // Allow client to request caching of specific URLs
+    const urls = event.data.urls || []
+    if (urls.length > 0) {
+      caches.open(CACHE_NAME).then((cache) => {
+        cache.addAll(urls).catch(() => {})
+      })
+    }
+  }
+})
+
 // Fetch event - network first for API, cache first for static
 self.addEventListener('fetch', (event) => {
   const { request } = event
   const url = new URL(request.url)
 
-  // Skip non-GET requests for caching
+  // Skip non-GET requests for caching (mutations are handled by client-side offline queue)
   if (request.method !== 'GET') {
-    // For POST/PUT/DELETE - try network, if offline the client will queue it
     event.respondWith(
       fetch(request).catch(() => {
         return new Response(JSON.stringify({ error: 'offline', queued: true }), {
@@ -66,12 +81,13 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // For API calls - network first, no cache (data should be fresh)
+  // Skip auth-related requests - always need network
   if (url.pathname.includes('/api/auth') || url.pathname.includes('/api/callback')) {
     return
   }
 
   // For data APIs - network first with cache fallback
+  // This is critical for offline support - cache all successful API responses
   if (url.pathname.includes('/api/')) {
     event.respondWith(
       fetch(request)
@@ -97,6 +113,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   // For navigation requests - network first with cache fallback
+  // This ensures the app shell loads even when offline
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
@@ -116,26 +133,30 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // For static assets - cache first
+  // For static assets (JS, CSS, images, fonts) - stale-while-revalidate
+  // Serve from cache immediately, update in background
   if (
-    request.url.match(/\.(js|css|png|jpg|jpeg|svg|ico|woff2?)$/)
+    request.url.match(/\.(js|css|png|jpg|jpeg|svg|ico|woff2?|json|webmanifest)$/)
   ) {
     event.respondWith(
       caches.match(request).then((cached) => {
-        if (cached) return cached
-        return fetch(request).then((response) => {
-          const cloned = response.clone()
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, cloned)
-          })
+        const fetchPromise = fetch(request).then((response) => {
+          if (response.ok) {
+            const cloned = response.clone()
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(request, cloned)
+            })
+          }
           return response
-        })
+        }).catch(() => cached)
+
+        return cached || fetchPromise
       })
     )
     return
   }
 
-  // Default - network first
+  // Default - network first with cache fallback
   event.respondWith(
     fetch(request)
       .then((response) => {
@@ -147,11 +168,4 @@ self.addEventListener('fetch', (event) => {
       })
       .catch(() => caches.match(request))
   )
-})
-
-// Handle messages from client
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting()
-  }
 })

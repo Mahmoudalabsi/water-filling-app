@@ -14,6 +14,9 @@ import { Switch } from '@/components/ui/switch'
 import { useLanguage } from '@/components/language-provider'
 import { ThemeLanguageToggle } from '@/components/theme-language-toggle'
 import { getDayNames } from '@/lib/i18n'
+import { useOffline } from '@/hooks/use-offline'
+import { apiUrl } from '@/lib/api-config'
+import { cacheFamilies, getCachedFamilies, cacheSettings, getCachedSettings, addPendingOperation, refreshPendingCount as refreshOfflinePendingCount } from '@/lib/offline-db'
 import {
   Users,
   Plus,
@@ -47,6 +50,9 @@ import {
   LogOut,
   User,
   Mail,
+  WifiOff,
+  Wifi,
+  RefreshCw,
 } from 'lucide-react'
 
 // Types - renamed FillingSession to avoid conflict with next-auth Session
@@ -107,6 +113,7 @@ interface ConfirmState {
 export default function Home() {
   const { data: session, status: sessionStatus } = useSession()
   const { t, locale, dir } = useLanguage()
+  const { isOnline, pendingCount, isSyncing, syncNow, refreshPendingCount } = useOffline()
   const [families, setFamilies] = useState<FamilyWithUsage[]>([])
   const [settings, setSettings] = useState<AppSettings>({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, resetDay: 6, lastAutoReset: null, resendApiKey: null })
   const [newFamilyName, setNewFamilyName] = useState('')
@@ -230,14 +237,18 @@ export default function Home() {
   const refreshFamilies = useCallback(async () => {
     try {
       const [familiesRes, settingsRes] = await Promise.all([
-        fetch('/api/families'),
-        fetch('/api/settings'),
+        fetch(apiUrl('/api/families')),
+        fetch(apiUrl('/api/settings')),
       ])
 
       if (!familiesRes.ok || !settingsRes.ok) throw new Error('API error')
 
       const data: Family[] = await familiesRes.json()
       const currentSettings: AppSettings = await settingsRes.json()
+
+      // Cache data for offline use
+      await cacheFamilies(data)
+      await cacheSettings(currentSettings)
 
       setSettings(currentSettings)
 
@@ -265,7 +276,46 @@ export default function Home() {
         }
       })
     } catch {
-      showToast('error', t('dataLoadError'))
+      // API failed - try cached data
+      try {
+        const cachedFamiliesData = await getCachedFamilies()
+        const cachedSettingsData = await getCachedSettings()
+        if (cachedFamiliesData && cachedSettingsData) {
+          setSettings(cachedSettingsData)
+
+          const familiesWithUsage: FamilyWithUsage[] = cachedFamiliesData.map((family: Family) => {
+            const weekStart = getWeekStart(cachedSettingsData.resetDay ?? 6)
+            const weeklySessions = (family.sessions || []).filter((s) => new Date(s.startTime) >= weekStart)
+            const weeklySeconds = weeklySessions.reduce((acc, s) => acc + (s.duration || 0), 0)
+            const activeSession = (family.sessions || []).find((s) => !s.endTime)
+
+            return {
+              ...family,
+              weeklySeconds,
+              activeSessionId: activeSession?.id || null,
+              activeSessionStart: activeSession?.startTime || null,
+            }
+          })
+
+          setFamilies(familiesWithUsage)
+
+          familiesWithUsage.forEach((family) => {
+            if (family.activeSessionId && family.activeSessionStart) {
+              const elapsed = Math.floor((Date.now() - new Date(family.activeSessionStart).getTime()) / 1000)
+              setTimers((prev) => ({ ...prev, [family.id]: elapsed }))
+              startTimerInterval(family.id)
+            }
+          })
+
+          if (!navigator.onLine) {
+            showToast('warning', t('usingCachedData'))
+          }
+        } else {
+          showToast('error', t('dataLoadError'))
+        }
+      } catch {
+        showToast('error', t('dataLoadError'))
+      }
     }
   }, [startTimerInterval, showToast, t])
 
@@ -284,8 +334,38 @@ export default function Home() {
   const addFamily = async () => {
     if (!newFamilyName.trim()) return
     const familyNameCopy = newFamilyName.trim()
+
+    if (!navigator.onLine) {
+      // Offline: queue the operation and add locally
+      const tempId = 'temp-' + Date.now()
+      await addPendingOperation({
+        type: 'create-family',
+        url: apiUrl('/api/families'),
+        method: 'POST',
+        body: { name: familyNameCopy },
+        tempId,
+      })
+      const tempFamily: FamilyWithUsage = {
+        id: tempId,
+        name: familyNameCopy,
+        createdAt: new Date().toISOString(),
+        sessions: [],
+        weeklySeconds: 0,
+        activeSessionId: null,
+        activeSessionStart: null,
+      }
+      setFamilies((prev) => [...prev, tempFamily])
+      const currentCached = await getCachedFamilies()
+      await cacheFamilies([...(currentCached || []), { id: tempId, name: familyNameCopy, createdAt: new Date().toISOString(), sessions: [] }])
+      setNewFamilyName('')
+      setAddDialogOpen(false)
+      refreshPendingCount()
+      showToast('info', t('operationQueued'))
+      return
+    }
+
     try {
-      const res = await fetch('/api/families', {
+      const res = await fetch(apiUrl('/api/families'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: familyNameCopy }),
@@ -305,8 +385,23 @@ export default function Home() {
       t('deleteFamily'),
       `${t('deleteFamilyConfirm')} "${name}"؟ ${t('deleteFamilyWarning')}`,
       async () => {
+        if (!navigator.onLine) {
+          await addPendingOperation({
+            type: 'delete-family',
+            url: apiUrl(`/api/families/${id}`),
+            method: 'DELETE',
+          })
+          stopTimerInterval(id)
+          setTimers((prev) => { const n = { ...prev }; delete n[id]; return n })
+          setFamilies((prev) => prev.filter((f) => f.id !== id))
+          const currentCached = await getCachedFamilies()
+          await cacheFamilies((currentCached || []).filter((f: any) => f.id !== id))
+          refreshPendingCount()
+          showToast('info', t('operationQueued'))
+          return
+        }
         try {
-          const res = await fetch(`/api/families/${id}`, { method: 'DELETE' })
+          const res = await fetch(apiUrl(`/api/families/${id}`), { method: 'DELETE' })
           if (!res.ok) throw new Error()
           stopTimerInterval(id)
           setTimers((prev) => { const n = { ...prev }; delete n[id]; return n })
@@ -328,11 +423,31 @@ export default function Home() {
 
   const saveEditFamily = async () => {
     if (!editingFamily || !editFamilyName.trim()) return
+    const editId = editingFamily.id
+    const editName = editFamilyName.trim()
+
+    if (!navigator.onLine) {
+      await addPendingOperation({
+        type: 'rename-family',
+        url: apiUrl(`/api/families/${editId}`),
+        method: 'PUT',
+        body: { name: editName },
+      })
+      setFamilies((prev) => prev.map((f) => f.id === editId ? { ...f, name: editName } : f))
+      const currentCached = await getCachedFamilies()
+      await cacheFamilies((currentCached || []).map((f: any) => f.id === editId ? { ...f, name: editName } : f))
+      setEditFamilyDialogOpen(false)
+      setEditingFamily(null)
+      refreshPendingCount()
+      showToast('info', t('operationQueued'))
+      return
+    }
+
     try {
-      const res = await fetch(`/api/families/${editingFamily.id}`, {
+      const res = await fetch(apiUrl(`/api/families/${editId}`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: editFamilyName.trim() }),
+        body: JSON.stringify({ name: editName }),
       })
       if (!res.ok) throw new Error()
       setEditFamilyDialogOpen(false)
@@ -345,8 +460,28 @@ export default function Home() {
   }
 
   const handleStartSession = async (familyId: string) => {
+    if (!navigator.onLine) {
+      // Offline: create a temp session, start timer locally, queue operation
+      const tempSessionId = 'temp-session-' + Date.now()
+      const now = new Date().toISOString()
+      await addPendingOperation({
+        type: 'start-session',
+        url: apiUrl(`/api/families/${familyId}/start`),
+        method: 'POST',
+        tempId: tempSessionId,
+      })
+      setTimers((prev) => ({ ...prev, [familyId]: 0 }))
+      startTimerInterval(familyId)
+      setFamilies((prev) => prev.map((f) =>
+        f.id === familyId ? { ...f, activeSessionId: tempSessionId, activeSessionStart: now } : f
+      ))
+      refreshPendingCount()
+      showToast('info', t('operationQueued'))
+      return
+    }
+
     try {
-      const res = await fetch(`/api/families/${familyId}/start`, { method: 'POST' })
+      const res = await fetch(apiUrl(`/api/families/${familyId}/start`), { method: 'POST' })
       const data = await res.json()
       if (!res.ok) {
         showToast('error', data.error || t('sessionStartError'))
@@ -363,8 +498,28 @@ export default function Home() {
 
   const handleStopSession = async (familyId: string, sessionId: string) => {
     const elapsed = timers[familyId] || 0
+
+    if (!navigator.onLine) {
+      // Offline: queue the stop operation with duration, stop timer locally
+      await addPendingOperation({
+        type: 'stop-session',
+        url: apiUrl(`/api/families/${familyId}/stop`),
+        method: 'POST',
+        body: { sessionId, duration: elapsed },
+      })
+      stopTimerInterval(familyId)
+      setTimers((prev) => { const n = { ...prev }; delete n[familyId]; return n })
+      setFamilies((prev) => prev.map((f) =>
+        f.id === familyId ? { ...f, activeSessionId: null, activeSessionStart: null } : f
+      ))
+      refreshPendingCount()
+      const mins = (elapsed / 60).toFixed(1)
+      showToast('info', `${t('operationQueued')} - ${t('duration')}: ${mins} ${t('minute')}`)
+      return
+    }
+
     try {
-      const res = await fetch(`/api/families/${familyId}/stop`, {
+      const res = await fetch(apiUrl(`/api/families/${familyId}/stop`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, duration: elapsed }),
@@ -384,8 +539,23 @@ export default function Home() {
       t('resetUsage'),
       `${t('resetConfirm')} "${familyName}"؟`,
       async () => {
+        if (!navigator.onLine) {
+          await addPendingOperation({
+            type: 'reset-family',
+            url: apiUrl(`/api/families/${familyId}/reset`),
+            method: 'POST',
+          })
+          stopTimerInterval(familyId)
+          setTimers((prev) => { const n = { ...prev }; delete n[familyId]; return n })
+          setFamilies((prev) => prev.map((f) =>
+            f.id === familyId ? { ...f, weeklySeconds: 0, activeSessionId: null, activeSessionStart: null, sessions: f.sessions?.filter((s) => !s.endTime) || [] } : f
+          ))
+          refreshPendingCount()
+          showToast('info', t('operationQueued'))
+          return
+        }
         try {
-          const res = await fetch(`/api/families/${familyId}/reset`, { method: 'POST' })
+          const res = await fetch(apiUrl(`/api/families/${familyId}/reset`), { method: 'POST' })
           if (!res.ok) throw new Error()
           stopTimerInterval(familyId)
           setTimers((prev) => { const n = { ...prev }; delete n[familyId]; return n })
@@ -404,8 +574,24 @@ export default function Home() {
       t('resetAllCounters'),
       t('resetAllConfirm'),
       async () => {
+        if (!navigator.onLine) {
+          await addPendingOperation({
+            type: 'reset-all',
+            url: apiUrl('/api/reset-all'),
+            method: 'POST',
+            body: {},
+          })
+          families.forEach((family) => {
+            if (family.activeSessionId) stopTimerInterval(family.id)
+          })
+          setTimers({})
+          setFamilies((prev) => prev.map((f) => ({ ...f, weeklySeconds: 0, activeSessionId: null, activeSessionStart: null, sessions: [] })))
+          refreshPendingCount()
+          showToast('info', t('operationQueued'))
+          return
+        }
         try {
-          const res = await fetch('/api/reset-all', {
+          const res = await fetch(apiUrl('/api/reset-all'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({}),
@@ -433,8 +619,23 @@ export default function Home() {
 
   const saveSettingsForm = async () => {
     if (settingsForm.freeMinutesPerWeek <= 0 || settingsForm.pricePerMinute < 0) return
+
+    if (!navigator.onLine) {
+      await addPendingOperation({
+        type: 'update-settings',
+        url: apiUrl('/api/settings'),
+        method: 'PUT',
+        body: settingsForm,
+      })
+      setSettings(settingsForm)
+      setSettingsDialogOpen(false)
+      refreshPendingCount()
+      showToast('info', t('operationQueued'))
+      return
+    }
+
     try {
-      const res = await fetch('/api/settings', {
+      const res = await fetch(apiUrl('/api/settings'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settingsForm),
@@ -449,20 +650,36 @@ export default function Home() {
   }
 
   const handleResetSettings = async () => {
+    const defaultSettings = {
+      freeMinutesPerWeek: 12,
+      pricePerMinute: 0.5,
+      autoResetWeekly: true,
+      resetDay: 6,
+      lastAutoReset: null,
+    }
+
+    if (!navigator.onLine) {
+      await addPendingOperation({
+        type: 'update-settings',
+        url: apiUrl('/api/settings'),
+        method: 'PUT',
+        body: defaultSettings,
+      })
+      setSettingsForm({ ...defaultSettings, resendApiKey: settingsForm.resendApiKey })
+      setSettings({ ...defaultSettings, resendApiKey: settings.resendApiKey })
+      refreshPendingCount()
+      showToast('info', t('operationQueued'))
+      return
+    }
+
     try {
-      const res = await fetch('/api/settings', {
+      const res = await fetch(apiUrl('/api/settings'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          freeMinutesPerWeek: 12,
-          pricePerMinute: 0.5,
-          autoResetWeekly: true,
-          resetDay: 6,
-          lastAutoReset: null,
-        }),
+        body: JSON.stringify(defaultSettings),
       })
       if (!res.ok) throw new Error()
-      setSettingsForm({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, resetDay: 6, lastAutoReset: null, resendApiKey: settingsForm.resendApiKey })
+      setSettingsForm({ ...defaultSettings, resendApiKey: settingsForm.resendApiKey })
       await refreshFamilies()
       showToast('info', t('restoreDefaultsSuccess'))
     } catch {
@@ -470,11 +687,12 @@ export default function Home() {
     }
   }
 
-  // Auto-reset check via API
+  // Auto-reset check via API (skip when offline)
   useEffect(() => {
     const checkAutoReset = async () => {
+      if (!navigator.onLine) return // Skip auto-reset check when offline
       try {
-        const res = await fetch('/api/reset-all', {
+        const res = await fetch(apiUrl('/api/reset-all'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ checkAutoReset: true }),
@@ -637,6 +855,60 @@ export default function Home() {
             <Button size="sm" variant="secondary" onClick={handleInstall} className="gap-1"><Smartphone className="w-3 h-3" />{t('installBtn')}</Button>
             <Button size="sm" variant="ghost" className="text-white hover:bg-white/20" onClick={() => setShowInstallBanner(false)}>✕</Button>
           </div>
+        </div>
+      )}
+
+      {/* Offline indicator */}
+      {!isOnline && (
+        <div className="bg-amber-500 text-white px-3 py-1.5 text-xs font-medium flex items-center justify-between gap-2 z-[55]">
+          <div className="flex items-center gap-2">
+            <WifiOff className="w-3.5 h-3.5" />
+            <span>{t('offlineMode')}</span>
+            {pendingCount > 0 && (
+              <span className="bg-white/20 rounded-full px-2 py-0.5">
+                {pendingCount} {t('pendingOperations')}
+              </span>
+            )}
+          </div>
+          <button
+            onClick={async () => {
+              const result = await syncNow()
+              if (result && result.synced > 0) {
+                showToast('success', t('syncComplete'))
+                await refreshFamilies()
+              }
+            }}
+            disabled={isSyncing}
+            className="flex items-center gap-1 bg-white/20 hover:bg-white/30 rounded px-2 py-0.5 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? t('syncing') : t('syncNow')}
+          </button>
+        </div>
+      )}
+      {isOnline && pendingCount > 0 && (
+        <div className="bg-emerald-500 text-white px-3 py-1.5 text-xs font-medium flex items-center justify-between gap-2 z-[55]">
+          <div className="flex items-center gap-2">
+            <Wifi className="w-3.5 h-3.5" />
+            <span>{t('backOnline')}</span>
+            <span className="bg-white/20 rounded-full px-2 py-0.5">
+              {pendingCount} {t('pendingOperations')}
+            </span>
+          </div>
+          <button
+            onClick={async () => {
+              const result = await syncNow()
+              if (result && result.synced > 0) {
+                showToast('success', t('syncComplete'))
+                await refreshFamilies()
+              }
+            }}
+            disabled={isSyncing}
+            className="flex items-center gap-1 bg-white/20 hover:bg-white/30 rounded px-2 py-0.5 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? t('syncing') : t('syncNow')}
+          </button>
         </div>
       )}
 
