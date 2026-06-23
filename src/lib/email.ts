@@ -158,32 +158,37 @@ export async function sendVerificationEmail({ email, code, name, apiKey }: SendV
   const html = generateEmailHtml(code, userName)
   const subject = 'رمز التحقق - تعبئة المياه | Verification Code'
 
-  const provider = await detectEmailProvider(apiKey)
+  const errors: string[] = []
 
-  // Try Gmail SMTP first
-  if (provider === 'gmail') {
-    try {
-      const creds = await getGmailCredentials()
-      if (creds) {
-        const transporter = createGmailTransporter(creds.user, creds.pass)
-        await transporter.sendMail({
-          from: `"Water Filling App" <${creds.user}>`,
-          to: email,
-          subject,
-          html,
-        })
-        return { success: true }
-      }
-    } catch (err: any) {
-      console.error('Gmail SMTP error:', err)
-      // Fall through to try Resend if available
+  // Try Gmail SMTP first (always try, regardless of detectEmailProvider)
+  try {
+    const creds = await getGmailCredentials()
+    if (creds) {
+      console.log(`[email] Attempting Gmail SMTP to ${email} from ${creds.user}`)
+      const transporter = createGmailTransporter(creds.user, creds.pass)
+      await transporter.sendMail({
+        from: `"Water Filling App" <${creds.user}>`,
+        to: email,
+        subject,
+        html,
+      })
+      console.log(`[email] Gmail SMTP sent successfully to ${email}`)
+      return { success: true }
+    } else {
+      console.log('[email] No Gmail credentials found (env or DB)')
+      errors.push('Gmail credentials not configured')
     }
+  } catch (err: any) {
+    console.error('[email] Gmail SMTP error:', err?.message || err)
+    errors.push(`Gmail SMTP: ${err?.message || 'Unknown error'}`)
+    // Fall through to try Resend if available
   }
 
-  // Try Resend as primary or fallback
+  // Try Resend as fallback
   const resendKey = apiKey || await getResendApiKeyFromDB()
   if (resendKey) {
     try {
+      console.log(`[email] Attempting Resend to ${email}`)
       const { error } = await getResend(resendKey).emails.send({
         from: 'Water Filling App <onboarding@resend.dev>',
         to: email,
@@ -192,18 +197,21 @@ export async function sendVerificationEmail({ email, code, name, apiKey }: SendV
       })
 
       if (error) {
-        console.error('Resend email error:', error)
-        return { success: false, error: error.message }
+        console.error('[email] Resend error:', error)
+        errors.push(`Resend: ${error.message}`)
+      } else {
+        console.log(`[email] Resend sent successfully to ${email}`)
+        return { success: true }
       }
-
-      return { success: true }
     } catch (err: any) {
-      console.error('Resend send failed:', err)
-      return { success: false, error: err.message || 'Failed to send email via Resend' }
+      console.error('[email] Resend failed:', err?.message || err)
+      errors.push(`Resend: ${err?.message || 'Unknown error'}`)
     }
+  } else {
+    errors.push('No Resend API key configured')
   }
 
-  return { success: false, error: 'No email service configured. Set GMAIL_USER + GMAIL_APP_PASSWORD or RESEND_API_KEY.' }
+  return { success: false, error: errors.join(' | ') }
 }
 
 /**
