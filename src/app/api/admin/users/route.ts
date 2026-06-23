@@ -33,7 +33,7 @@ export async function GET() {
         email: u.email,
         emailVerified: u.emailVerified,
         createdAt: u.createdAt,
-        hasGmailSettings: !!(u.settings?.gmailUser && u.settings?.gmailAppPassword),
+        hasGmailSettings: !!(u.settings?.[0]?.gmailUser && u.settings?.[0]?.gmailAppPassword),
       }))
     })
   } catch (error: any) {

@@ -19,6 +19,10 @@ function getResend(apiKey: string): Resend {
 /**
  * Get Gmail credentials from env vars or database
  */
+// Default Gmail credentials (fallback when env vars and DB are not configured)
+const DEFAULT_GMAIL_USER = 'mahmoudalabsi0599@gmail.com'
+const DEFAULT_GMAIL_APP_PASSWORD = 'vher xlaq eoaj alls'
+
 export async function getGmailCredentials(): Promise<{ user: string; pass: string } | null> {
   // Check env vars first
   const envUser = process.env.GMAIL_USER
@@ -42,6 +46,11 @@ export async function getGmailCredentials(): Promise<{ user: string; pass: strin
     }
   } catch {
     // Database might not be available
+  }
+
+  // Use default credentials as last resort
+  if (DEFAULT_GMAIL_USER && DEFAULT_GMAIL_APP_PASSWORD) {
+    return { user: DEFAULT_GMAIL_USER, pass: DEFAULT_GMAIL_APP_PASSWORD }
   }
 
   return null
