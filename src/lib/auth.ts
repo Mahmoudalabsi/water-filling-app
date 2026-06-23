@@ -194,13 +194,8 @@ export const authOptions: NextAuthOptions = {
  * - Mobile app / Capacitor (Bearer JWT token)
  */
 export async function getCurrentUser(request?: Request | import('next/server').NextRequest) {
-  // First try: NextAuth session (cookie-based, works in browser)
-  const session = await getServerSession(authOptions)
-  if (session?.user) {
-    return session.user as (typeof session.user & { id: string }) | undefined
-  }
-
-  // Second try: Bearer token (works in mobile app / Capacitor)
+  // Check for Bearer token first in Capacitor/mobile (more reliable than cookies in WebView)
+  // Also check as fallback for browser if NextAuth session is not available
   if (request) {
     const userId = getUserIdFromToken(request)
     if (userId) {
@@ -213,6 +208,12 @@ export async function getCurrentUser(request?: Request | import('next/server').N
         return user as any
       }
     }
+  }
+
+  // Fallback: NextAuth session (cookie-based, works in browser)
+  const session = await getServerSession(authOptions)
+  if (session?.user) {
+    return session.user as (typeof session.user & { id: string }) | undefined
   }
 
   return undefined

@@ -8,13 +8,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Droplets, Mail, CheckCircle, RefreshCw } from 'lucide-react'
 import { useLanguage } from '@/components/language-provider'
 import { ThemeLanguageToggle } from '@/components/theme-language-toggle'
-import { apiUrl, authFetch } from '@/lib/api-config'
+import { apiUrl, authFetch, isCapacitorApp } from '@/lib/api-config'
+import { useLocalAuth } from '@/components/auth-provider'
 
 function VerifyEmailContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { t, locale, dir } = useLanguage()
   const email = searchParams.get('email') || ''
+
+  const { localSignIn } = useLocalAuth()
 
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
@@ -55,7 +58,44 @@ function VerifyEmailContent() {
       }
 
       setSuccess(t('verifiedSuccess'))
-      // Redirect to sign in after 2 seconds
+
+      // Try auto-login after verification
+      try {
+        const stored = sessionStorage.getItem('pending_verification')
+        if (stored) {
+          const { email: storedEmail, password: storedPassword } = JSON.parse(stored)
+          sessionStorage.removeItem('pending_verification') // Clean up
+
+          if (storedEmail === email && storedPassword) {
+            const isApp = isCapacitorApp()
+
+            if (isApp) {
+              // Capacitor: use localSignIn with JWT token
+              const loginResult = await localSignIn(storedEmail, storedPassword)
+              if (loginResult.success) {
+                setTimeout(() => router.push('/'), 1000)
+                return
+              }
+            } else {
+              // Browser: use NextAuth credentials sign-in
+              const { signIn } = await import('next-auth/react')
+              const result = await signIn('credentials', {
+                email: storedEmail,
+                password: storedPassword,
+                redirect: false,
+              })
+              if (result?.ok) {
+                setTimeout(() => router.push('/'), 1000)
+                return
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Auto-login after verification failed:', e)
+      }
+
+      // Fallback: redirect to sign in page
       setTimeout(() => {
         router.push('/signin')
       }, 2000)

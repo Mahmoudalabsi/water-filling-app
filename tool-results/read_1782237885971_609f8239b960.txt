@@ -1,0 +1,402 @@
+  1001→                  <DialogClose asChild><Button variant="outline">{t('cancel')}</Button></DialogClose>
+  1002→                  <Button onClick={addFamily} disabled={!newFamilyName.trim()} className="bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-700 hover:to-emerald-700 text-white">{t('add')}</Button>
+  1003→                </DialogFooter>
+  1004→              </DialogContent>
+  1005→            </Dialog>
+  1006→
+  1007→            {/* User Menu */}
+  1008→            {currentUser && (
+  1009→              <div className="flex items-center gap-1.5">
+  1010→                <div className="hidden sm:flex items-center gap-1.5 bg-gradient-to-r from-cyan-50 to-emerald-50 dark:from-cyan-900/20 dark:to-emerald-900/20 border border-cyan-200 dark:border-cyan-800 rounded-lg px-2 py-1">
+  1011→                  {currentUser.image ? (
+  1012→                    <img src={currentUser.image} alt={currentUser.name || ''} className="w-5 h-5 rounded-full" />
+  1013→                  ) : (
+  1014→                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center">
+  1015→                      <User className="w-3 h-3 text-white" />
+  1016→                    </div>
+  1017→                  )}
+  1018→                  <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300 max-w-[80px] truncate">{currentUser.name || currentUser.email}</span>
+  1019→                </div>
+  1020→                <Button
+  1021→                  variant="outline"
+  1022→                  size="sm"
+  1023→                  onClick={async () => {
+  1024→                    if (localAuth.loginMethod === 'local') {
+  1025→                      await localSignOut()
+  1026→                      window.location.href = '/signin'
+  1027→                    } else {
+  1028→                      signOut({ callbackUrl: '/signin' })
+  1029→                    }
+  1030→                  }}
+  1031→                  className="gap-1 text-xs border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-300 dark:hover:border-red-800 h-7 px-2"
+  1032→                  title={t('signOut')}
+  1033→                >
+  1034→                  <LogOut className="w-3.5 h-3.5" />
+  1035→                  <span className="hidden md:inline">{t('signOutShort')}</span>
+  1036→                </Button>
+  1037→              </div>
+  1038→            )}
+  1039→          </div>
+  1040→        </div>
+  1041→      </header>
+  1042→
+  1043→      {/* ====== SETTINGS DIALOG ====== */}
+  1044→      <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
+  1045→        <DialogContent className="sm:max-w-md md:max-w-lg" dir={dir}>
+  1046→          <DialogHeader>
+  1047→            <DialogTitle className={`flex items-center gap-2 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
+  1048→              <Settings className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+  1049→              {t('appSettings')}
+  1050→            </DialogTitle>
+  1051→          </DialogHeader>
+  1052→          <div className="space-y-5 py-4">
+  1053→            <div className="space-y-2">
+  1054→              <Label htmlFor="free-minutes" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+  1055→                {t('freeMinutesWeekly')}
+  1056→              </Label>
+  1057→              <Input
+  1058→                id="free-minutes"
+  1059→                type="number"
+  1060→                min="1"
+  1061→                step="1"
+  1062→                value={settingsForm.freeMinutesPerWeek}
+  1063→                onChange={(e) => setSettingsForm((prev) => ({ ...prev, freeMinutesPerWeek: Number(e.target.value) || 0 }))}
+  1064→                className="text-center text-lg font-bold"
+  1065→              />
+  1066→              <p className="text-[10px] text-gray-400 dark:text-gray-500">{t('freeMinutesDesc')}</p>
+  1067→            </div>
+  1068→            <Separator />
+  1069→            <div className="space-y-2">
+  1070→              <Label htmlFor="price-minute" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+  1071→                {t('pricePerMinute')}
+  1072→              </Label>
+  1073→              <Input
+  1074→                id="price-minute"
+  1075→                type="number"
+  1076→                min="0"
+  1077→                step="0.1"
+  1078→                value={settingsForm.pricePerMinute}
+  1079→                onChange={(e) => setSettingsForm((prev) => ({ ...prev, pricePerMinute: Number(e.target.value) || 0 }))}
+  1080→                className="text-center text-lg font-bold"
+  1081→              />
+  1082→              <p className="text-[10px] text-gray-400 dark:text-gray-500">{t('priceDesc')}</p>
+  1083→            </div>
+  1084→            <Separator />
+  1085→            <div className="flex items-center justify-between">
+  1086→              <div className="space-y-0.5">
+  1087→                <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+  1088→                  <Zap className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+  1089→                  {t('autoResetWeekly')}
+  1090→                </Label>
+  1091→                <p className="text-[10px] text-gray-400 dark:text-gray-500">{t('autoResetDesc')}</p>
+  1092→              </div>
+  1093→              <Switch
+  1094→                checked={settingsForm.autoResetWeekly}
+  1095→                onCheckedChange={(checked) => setSettingsForm((prev) => ({ ...prev, autoResetWeekly: checked }))}
+  1096→                className="data-[state=checked]:bg-emerald-500"
+  1097→              />
+  1098→            </div>
+  1099→            {settingsForm.autoResetWeekly && (
+  1100→              <div className="space-y-2 bg-emerald-50/50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-3">
+  1101→                <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+  1102→                  <CalendarDays className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+  1103→                  {t('resetDay')}
+  1104→                </Label>
+  1105→                <div className="grid grid-cols-4 gap-1.5">
+  1106→                  {dayNames.map((name, index) => (
+  1107→                    <button
+  1108→                      key={index}
+  1109→                      type="button"
+  1110→                      onClick={() => setSettingsForm((prev) => ({ ...prev, resetDay: index }))}
+  1111→                      className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-all ${
+  1112→                        settingsForm.resetDay === index
+  1113→                          ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200 dark:shadow-emerald-900/30 border border-emerald-500'
+  1114→                          : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:border-emerald-300 dark:hover:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/20'
+  1115→                      }`}
+  1116→                    >
+  1117→                      {name}
+  1118→                    </button>
+  1119→                  ))}
+  1120→                </div>
+  1121→                <p className="text-[10px] text-gray-400 dark:text-gray-500">{t('resetDayAutoDesc')} {dayNames[settingsForm.resetDay ?? 6]}</p>
+  1122→              </div>
+  1123→            )}
+  1124→            <div className="bg-gradient-to-r from-cyan-50 to-emerald-50 dark:from-cyan-900/20 dark:to-emerald-900/20 border border-cyan-200 dark:border-cyan-800 rounded-xl p-3">
+  1125→              <p className="text-xs font-semibold text-cyan-800 dark:text-cyan-300 mb-1.5">{t('preview')}</p>
+  1126→              <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400">
+  1127→                <span>{t('freeLimit')}</span>
+  1128→                <span className="font-bold text-emerald-700 dark:text-emerald-400">{settingsForm.freeMinutesPerWeek} {t('minutesPerWeek')}</span>
+  1129→              </div>
+  1130→              <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mt-1">
+  1131→                <span>{t('extraPrice')}</span>
+  1132→                <span className="font-bold text-amber-700 dark:text-amber-400">{settingsForm.pricePerMinute} {t('shekelPerMinute')}</span>
+  1133→              </div>
+  1134→              <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mt-1">
+  1135→                <span>{t('resetModeLabel')}</span>
+  1136→                <span className={`font-bold ${settingsForm.autoResetWeekly ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}>
+  1137→                  {settingsForm.autoResetWeekly ? `${t('autoResetOn')} ${dayNames[settingsForm.resetDay ?? 6]}` : t('autoResetManual')}
+  1138→                </span>
+  1139→              </div>
+  1140→            </div>
+  1141→
+  1142→            {/* Email Settings */}
+  1143→            <Separator />
+  1144→            <div className="space-y-2">
+  1145→              <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+  1146→                <Mail className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+  1147→                {t('emailSettings')}
+  1148→              </Label>
+  1149→              <div className="flex items-center gap-2 mb-2">
+  1150→                <span className="text-[10px] text-gray-400 dark:text-gray-500">{t('emailServiceStatus')}:</span>
+  1151→                <span className={`text-[10px] font-bold ${settingsForm.resendApiKey ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+  1152→                  {settingsForm.resendApiKey ? t('emailServiceActive') : t('emailServiceInactive')}
+  1153→                </span>
+  1154→              </div>
+  1155→              <Input
+  1156→                type="password"
+  1157→                placeholder={t('resendApiKeyPlaceholder')}
+  1158→                value={settingsForm.resendApiKey || ''}
+  1159→                onChange={(e) => setSettingsForm((prev) => ({ ...prev, resendApiKey: e.target.value || null }))}
+  1160→                className="text-sm"
+  1161→                dir="ltr"
+  1162→              />
+  1163→              <p className="text-[10px] text-gray-400 dark:text-gray-500">
+  1164→                {t('resendApiKeyDesc')}
+  1165→                {' · '}
+  1166→                <a href="https://resend.com/signup" target="_blank" rel="noopener noreferrer" className="text-cyan-500 hover:text-cyan-600 dark:hover:text-cyan-300 underline">
+  1167→                  {t('getResendKey')}
+  1168→                </a>
+  1169→              </p>
+  1170→            </div>
+  1171→          </div>
+  1172→          <DialogFooter className="gap-2">
+  1173→            <Button variant="outline" size="sm" onClick={handleResetSettings} className="gap-1.5 text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300">
+  1174→              <RotateCcw className="w-3.5 h-3.5" />
+  1175→              {t('restoreDefaults')}
+  1176→            </Button>
+  1177→            <DialogClose asChild><Button variant="outline">{t('cancel')}</Button></DialogClose>
+  1178→            <Button onClick={saveSettingsForm} disabled={settingsForm.freeMinutesPerWeek <= 0 || settingsForm.pricePerMinute < 0} className="gap-1.5 bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-700 hover:to-emerald-700 text-white">
+  1179→              <Save className="w-3.5 h-3.5" />
+  1180→              {t('save')}
+  1181→            </Button>
+  1182→          </DialogFooter>
+  1183→        </DialogContent>
+  1184→      </Dialog>
+  1185→
+  1186→      {/* ====== EDIT FAMILY DIALOG ====== */}
+  1187→      <Dialog open={editFamilyDialogOpen} onOpenChange={setEditFamilyDialogOpen}>
+  1188→        <DialogContent className="sm:max-w-md" dir={dir}>
+  1189→          <DialogHeader>
+  1190→            <DialogTitle className={`flex items-center gap-2 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
+  1191→              <Pencil className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+  1192→              {t('editFamily')}
+  1193→            </DialogTitle>
+  1194→          </DialogHeader>
+  1195→          <div className="space-y-4 py-4">
+  1196→            <div className="space-y-2">
+  1197→              <Label>{t('familyName')}</Label>
+  1198→              <Input
+  1199→                placeholder={t('enterNewName')}
+  1200→                value={editFamilyName}
+  1201→                onChange={(e) => setEditFamilyName(e.target.value)}
+  1202→                onKeyDown={(e) => e.key === 'Enter' && saveEditFamily()}
+  1203→                className={dir === 'rtl' ? 'text-right' : 'text-left'}
+  1204→              />
+  1205→            </div>
+  1206→          </div>
+  1207→          <DialogFooter className="gap-2">
+  1208→            <DialogClose asChild><Button variant="outline">{t('cancel')}</Button></DialogClose>
+  1209→            <Button onClick={saveEditFamily} disabled={!editFamilyName.trim()} className="gap-1.5 bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-700 hover:to-emerald-700 text-white">
+  1210→              <Save className="w-3.5 h-3.5" />
+  1211→              {t('saveEdit')}
+  1212→            </Button>
+  1213→          </DialogFooter>
+  1214→        </DialogContent>
+  1215→      </Dialog>
+  1216→
+  1217→      {/* ====== DASHBOARD VIEW ====== */}
+  1218→      {currentView === 'dashboard' && (
+  1219→        <>
+  1220→          {/* Stats Section - Responsive */}
+  1221→          <div className="max-w-7xl mx-auto px-3 md:px-6 mt-3 md:mt-4">
+  1222→            {/* Mobile: Settings info bar */}
+  1223→            <div className="md:hidden bg-gradient-to-r from-cyan-50 to-emerald-50 dark:from-cyan-900/20 dark:to-emerald-900/20 border border-cyan-200 dark:border-cyan-800 rounded-xl p-3 flex flex-wrap items-center gap-3 justify-between mb-3">
+  1224→              <div className="flex items-center gap-2">
+  1225→                <div className="w-8 h-8 rounded-lg bg-cyan-100 dark:bg-cyan-900/40 flex items-center justify-center">
+  1226→                  <Clock className="w-4 h-4 text-cyan-700 dark:text-cyan-400" />
+  1227→                </div>
+  1228→                <div>
+  1229→                  <p className="text-xs font-semibold text-cyan-800 dark:text-cyan-300">{t('freeLimitLabel')} {freeMin} {t('minutesPerWeek')}</p>
+  1230→                  <p className="text-[10px] text-cyan-600 dark:text-cyan-400">{t('extraPriceLabel')} {priceMin} {t('shekelPerMinute')}</p>
+  1231→                </div>
+  1232→              </div>
+  1233→              <div className="flex items-center gap-3 text-xs">
+  1234→                <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span><span className="text-gray-600 dark:text-gray-400">{t('free')}</span></div>
+  1235→                <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span><span className="text-gray-600 dark:text-gray-400">{t('paid')}</span></div>
+  1236→              </div>
+  1237→            </div>
+  1238→
+  1239→            {/* Desktop: Full stats dashboard */}
+  1240→            <div className="hidden md:grid grid-cols-4 gap-4 mb-4">
+  1241→              <Card className="border-cyan-200 dark:border-cyan-800 bg-gradient-to-br from-cyan-50 to-white dark:from-cyan-900/20 dark:to-gray-900 shadow-sm hover:shadow-md transition-shadow">
+  1242→                <CardContent className="p-4 flex items-center gap-3">
+  1243→                  <div className="w-12 h-12 rounded-xl bg-cyan-100 dark:bg-cyan-900/40 flex items-center justify-center flex-shrink-0">
+  1244→                    <Users className="w-6 h-6 text-cyan-600 dark:text-cyan-400" />
+  1245→                  </div>
+  1246→                  <div>
+  1247→                    <p className="text-2xl font-bold text-cyan-700 dark:text-cyan-400">{families.length}</p>
+  1248→                    <p className="text-xs text-gray-500 dark:text-gray-400">{t('totalFamilies')}</p>
+  1249→                  </div>
+  1250→                </CardContent>
+  1251→              </Card>
+  1252→              <Card className="border-emerald-200 dark:border-emerald-800 bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-900/20 dark:to-gray-900 shadow-sm hover:shadow-md transition-shadow">
+  1253→                <CardContent className="p-4 flex items-center gap-3">
+  1254→                  <div className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center flex-shrink-0">
+  1255→                    <Activity className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+  1256→                  </div>
+  1257→                  <div>
+  1258→                    <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-400">{activeFamilyCount}</p>
+  1259→                    <p className="text-xs text-gray-500 dark:text-gray-400">{t('activeNow')}</p>
+  1260→                  </div>
+  1261→                </CardContent>
+  1262→              </Card>
+  1263→              <Card className="border-amber-200 dark:border-amber-800 bg-gradient-to-br from-amber-50 to-white dark:from-amber-900/20 dark:to-gray-900 shadow-sm hover:shadow-md transition-shadow">
+  1264→                <CardContent className="p-4 flex items-center gap-3">
+  1265→                  <div className="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center flex-shrink-0">
+  1266→                    <DollarSign className="w-6 h-6 text-amber-600 dark:text-amber-400" />
+  1267→                  </div>
+  1268→                  <div>
+  1269→                    <p className="text-2xl font-bold text-amber-700 dark:text-amber-400">{totalRevenue.toFixed(2)}</p>
+  1270→                    <p className="text-xs text-gray-500 dark:text-gray-400">{t('totalRevenueShekel')}</p>
+  1271→                  </div>
+  1272→                </CardContent>
+  1273→              </Card>
+  1274→              <Card className="border-rose-200 dark:border-rose-800 bg-gradient-to-br from-rose-50 to-white dark:from-rose-900/20 dark:to-gray-900 shadow-sm hover:shadow-md transition-shadow">
+  1275→                <CardContent className="p-4 flex items-center gap-3">
+  1276→                  <div className="w-12 h-12 rounded-xl bg-rose-100 dark:bg-rose-900/40 flex items-center justify-center flex-shrink-0">
+  1277→                    <Timer className="w-6 h-6 text-rose-600 dark:text-rose-400" />
+  1278→                  </div>
+  1279→                  <div>
+  1280→                    <p className="text-2xl font-bold text-rose-700 dark:text-rose-400">{totalMinutesUsed.toFixed(1)}</p>
+  1281→                    <p className="text-xs text-gray-500 dark:text-gray-400">{t('totalMinutesUsed')}</p>
+  1282→                  </div>
+  1283→                </CardContent>
+  1284→              </Card>
+  1285→            </div>
+  1286→
+  1287→            {/* Desktop: Settings info bar */}
+  1288→            <div className="hidden md:flex bg-gradient-to-r from-cyan-50/80 to-emerald-50/80 dark:from-cyan-900/20 dark:to-emerald-900/20 border border-cyan-200 dark:border-cyan-800 rounded-xl p-3 items-center justify-between mb-4">
+  1289→              <div className="flex items-center gap-3">
+  1290→                <div className="w-9 h-9 rounded-lg bg-cyan-100 dark:bg-cyan-900/40 flex items-center justify-center">
+  1291→                  <Clock className="w-4 h-4 text-cyan-700 dark:text-cyan-400" />
+  1292→                </div>
+  1293→                <div>
+  1294→                  <p className="text-sm font-semibold text-cyan-800 dark:text-cyan-300">{t('freeLimitInfo')} {freeMin} {t('minutesPerWeek')}</p>
+  1295→                  <p className="text-xs text-cyan-600 dark:text-cyan-400">{t('extraPriceInfo')} {priceMin} {t('shekel')}</p>
+  1296→                </div>
+  1297→              </div>
+  1298→              <div className="flex items-center gap-4 text-xs">
+  1299→                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-400"></span><span className="text-gray-600 dark:text-gray-400">{t('free')}</span></div>
+  1300→                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-amber-400"></span><span className="text-gray-600 dark:text-gray-400">{t('paid')}</span></div>
+  1301→                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-rose-400"></span><span className="text-gray-600 dark:text-gray-400">{t('overLimitFamilies')} ({totalFamiliesOverLimit} {t('familiesOverLimitCount')})</span></div>
+  1302→              </div>
+  1303→            </div>
+  1304→          </div>
+  1305→
+  1306→          {/* Family Cards Grid */}
+  1307→          <main className="max-w-7xl mx-auto px-3 md:px-6 pb-6">
+  1308→            {loading ? (
+  1309→              <div className="flex flex-col items-center justify-center py-20 gap-4">
+  1310→                <div className="w-12 h-12 rounded-full border-4 border-cyan-200 dark:border-cyan-800 border-t-cyan-600 dark:border-t-cyan-400 animate-spin"></div>
+  1311→                <p className="text-gray-500 dark:text-gray-400">{t('loading')}</p>
+  1312→              </div>
+  1313→            ) : families.length === 0 ? (
+  1314→              <div className="flex flex-col items-center justify-center py-20 gap-4">
+  1315→                <div className="w-20 h-20 rounded-full bg-cyan-50 dark:bg-cyan-900/20 flex items-center justify-center"><Users className="w-10 h-10 text-cyan-300 dark:text-cyan-700" /></div>
+  1316→                <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-300">{t('noFamilies')}</h2>
+  1317→                <p className="text-gray-500 dark:text-gray-400 text-sm">{t('addFamilyStart')}</p>
+  1318→              </div>
+  1319→            ) : (
+  1320→              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+  1321→                {families.map((family) => {
+  1322→                  const isActive = !!family.activeSessionId
+  1323→                  const timerSeconds = timers[family.id] || 0
+  1324→                  const totalUsedMinutes = (family.weeklySeconds + timerSeconds) / 60
+  1325→                  const { paidMinutes, cost } = calculateCost(family)
+  1326→                  const usagePercent = getUsagePercentage(family)
+  1327→                  const overLimit = isOverFreeLimit(family)
+  1328→                  const freeRemaining = Math.max(0, freeMin - totalUsedMinutes)
+  1329→                  const isExpanded = expandedFamily === family.id
+  1330→
+  1331→                  return (
+  1332→                    <Card key={family.id} className={`overflow-hidden transition-all duration-300 border-2 ${isActive ? 'border-emerald-400 dark:border-emerald-600 shadow-lg shadow-emerald-100 dark:shadow-emerald-900/20 ring-1 ring-emerald-200 dark:ring-emerald-800' : overLimit ? 'border-amber-300 dark:border-amber-700 shadow-md shadow-amber-50 dark:shadow-amber-900/10' : 'border-gray-200 dark:border-gray-700 hover:border-cyan-300 dark:hover:border-cyan-700 hover:shadow-md hover:shadow-cyan-50 dark:hover:shadow-cyan-900/10'}`}>
+  1333→                      {isActive && <div className="h-1 bg-gradient-to-r from-cyan-500 to-emerald-500 animate-pulse" />}
+  1334→                      <CardHeader className="pb-2">
+  1335→                        <div className="flex items-center justify-between">
+  1336→                          <CardTitle className="text-sm md:text-base flex items-center gap-2">
+  1337→                            <div className={`w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center ${isActive ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400' : overLimit ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400' : 'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-600 dark:text-cyan-400'}`}>
+  1338→                              <Droplets className="w-3.5 h-3.5 md:w-4 md:h-4" />
+  1339→                            </div>
+  1340→                            <span className="truncate max-w-[100px] md:max-w-[160px] lg:max-w-[200px]">{family.name}</span>
+  1341→                          </CardTitle>
+  1342→                          <div className="flex items-center gap-1">
+  1343→                            {isActive && <Badge className="bg-emerald-500 text-white text-[9px] md:text-[10px] px-1.5 py-0"><span className={`w-1 h-1 rounded-full bg-white animate-pulse ${dir === 'rtl' ? 'ml-0.5' : 'mr-0.5'}`}></span>{t('active')}</Badge>}
+  1344→                            {overLimit && !isActive && <Badge variant="destructive" className="text-[9px] md:text-[10px] px-1.5 py-0">{t('overLimit')}</Badge>}
+  1345→                          </div>
+  1346→                        </div>
+  1347→                      </CardHeader>
+  1348→                      <CardContent className="space-y-3">
+  1349→                        <div className={`text-center py-3 md:py-4 rounded-xl ${isActive ? 'bg-gradient-to-br from-emerald-50 to-cyan-50 dark:from-emerald-900/20 dark:to-cyan-900/20 border border-emerald-200 dark:border-emerald-800' : 'bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700'}`}>
+  1350→                          <div className="text-3xl md:text-4xl font-mono font-bold tracking-wider">
+  1351→                            <span className={isActive ? 'text-emerald-700 dark:text-emerald-400' : 'text-gray-700 dark:text-gray-300'}>{formatTime(timerSeconds)}</span>
+  1352→                          </div>
+  1353→                          {isActive && <p className="text-[10px] md:text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">{t('filling')}</p>}
+  1354→                        </div>
+  1355→
+  1356→                        <div className="space-y-1">
+  1357→                          <div className="flex justify-between text-[10px] md:text-xs">
+  1358→                            <span className="text-gray-500 dark:text-gray-400">{t('freeUsage')}</span>
+  1359→                            <span className={`font-medium ${overLimit ? 'text-amber-600 dark:text-amber-400' : 'text-gray-700 dark:text-gray-300'}`}>
+  1360→                              {Math.min(totalUsedMinutes, freeMin).toFixed(1)}/{freeMin} {t('minShort')}
+  1361→                            </span>
+  1362→                          </div>
+  1363→                          <Progress value={usagePercent} className={`h-2 ${overLimit ? '[&>div]:bg-amber-500' : '[&>div]:bg-gradient-to-r [&>div]:from-cyan-500 [&>div]:to-emerald-500'}`} />
+  1364→                        </div>
+  1365→
+  1366→                        <div className="grid grid-cols-2 gap-1.5 md:gap-2">
+  1367→                          <div className="bg-white dark:bg-gray-800 rounded-lg p-2 border border-gray-100 dark:border-gray-700 text-center">
+  1368→                            <p className="text-[9px] md:text-[10px] text-gray-500 dark:text-gray-400">{t('freeRemaining')}</p>
+  1369→                            <p className={`text-xs md:text-sm font-bold ${freeRemaining > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+  1370→                              {freeRemaining > 0 ? `${freeRemaining.toFixed(1)} ${t('minShort')}` : t('exhausted')}
+  1371→                            </p>
+  1372→                          </div>
+  1373→                          <div className="bg-white dark:bg-gray-800 rounded-lg p-2 border border-gray-100 dark:border-gray-700 text-center">
+  1374→                            <p className="text-[9px] md:text-[10px] text-gray-500 dark:text-gray-400">{t('amountDue')}</p>
+  1375→                            <p className={`text-xs md:text-sm font-bold ${cost > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>{cost.toFixed(2)} {t('shekel')}</p>
+  1376→                          </div>
+  1377→                        </div>
+  1378→
+  1379→                        {paidMinutes > 0 && (
+  1380→                          <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-2 border border-amber-200 dark:border-amber-800 text-center">
+  1381→                            <p className="text-[10px] md:text-xs text-amber-700 dark:text-amber-400">
+  1382→                              <AlertCircle className={`w-2.5 h-2.5 inline ${dir === 'rtl' ? 'ml-0.5' : 'mr-0.5'}`} />
+  1383→                              {t('extraInfo')}: <span className="font-bold">{paidMinutes.toFixed(1)}</span> {t('minShort')} × {priceMin} {t('shekel')}
+  1384→                            </p>
+  1385→                          </div>
+  1386→                        )}
+  1387→
+  1388→                        <Separator />
+  1389→
+  1390→                        <div className="flex gap-1.5 md:gap-2">
+  1391→                          {isActive ? (
+  1392→                            <Button onClick={() => handleStopSession(family.id, family.activeSessionId!)} className="flex-1 gap-1.5 bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600 text-white shadow-sm text-xs h-8 md:h-9">
+  1393→                              <Pause className="w-3.5 h-3.5" />{t('stop')}
+  1394→                            </Button>
+  1395→                          ) : (
+  1396→                            <Button onClick={() => handleStartSession(family.id)} className="flex-1 gap-1.5 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white shadow-sm text-xs h-8 md:h-9">
+  1397→                              <Play className="w-3.5 h-3.5" />{t('start')}
+  1398→                            </Button>
+  1399→                          )}
+  1400→                          <Button variant="outline" size="sm" onClick={() => openEditFamily(family)} className="gap-1 border-cyan-300 dark:border-cyan-700 text-cyan-700 dark:text-cyan-400 hover:text-cyan-800 dark:hover:text-cyan-300 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 hover:border-cyan-400 dark:hover:border-cyan-600 bg-cyan-50/50 dark:bg-cyan-900/10 h-8 md:h-9" title={t('edit')}>
+
+[showing lines 1001-1400 of 1689; use offset=1401 with limit to continue reading]

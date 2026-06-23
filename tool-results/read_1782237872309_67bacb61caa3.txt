@@ -1,0 +1,1689 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { useState, useEffect, useCallback, useRef } from 'react'
+     4→     4→import { useSession, signOut } from 'next-auth/react'
+     5→     5→import { Button } from '@/components/ui/button'
+     6→     6→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+     7→     7→import { Input } from '@/components/ui/input'
+     8→     8→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '@/components/ui/dialog'
+     9→     9→import { Badge } from '@/components/ui/badge'
+    10→    10→import { Progress } from '@/components/ui/progress'
+    11→    11→import { Separator } from '@/components/ui/separator'
+    12→    12→import { Label } from '@/components/ui/label'
+    13→    13→import { Switch } from '@/components/ui/switch'
+    14→    14→import { useLanguage } from '@/components/language-provider'
+    15→    15→import { ThemeLanguageToggle } from '@/components/theme-language-toggle'
+    16→    16→import { getDayNames } from '@/lib/i18n'
+    17→    17→import { useOffline } from '@/hooks/use-offline'
+    18→    18→import { apiUrl, isCapacitorApp, authFetch } from '@/lib/api-config'
+    19→    19→import { cacheFamilies, getCachedFamilies, cacheSettings, getCachedSettings, addPendingOperation, refreshPendingCount as refreshOfflinePendingCount } from '@/lib/offline-db'
+    20→    20→import { useLocalAuth } from '@/components/auth-provider'
+    21→    21→import {
+    22→    22→  Users,
+    23→    23→  Plus,
+    24→    24→  Trash2,
+    25→    25→  Pause,
+    26→    26→  Timer,
+    27→    27→  Droplets,
+    28→    28→  AlertCircle,
+    29→    29→  CheckCircle2,
+    30→    30→  Clock,
+    31→    31→  ChevronDown,
+    32→    32→  ChevronUp,
+    33→    33→  History,
+    34→    34→  Search,
+    35→    35→  CalendarDays,
+    36→    36→  Coins,
+    37→    37→  Download,
+    38→    38→  Smartphone,
+    39→    39→  Settings,
+    40→    40→  Pencil,
+    41→    41→  RotateCcw,
+    42→    42→  Save,
+    43→    43→  Zap,
+    44→    44→  X,
+    45→    45→  AlertTriangle,
+    46→    46→  Info,
+    47→    47→  Play,
+    48→    48→  TrendingUp,
+    49→    49→  Activity,
+    50→    50→  DollarSign,
+    51→    51→  LogOut,
+    52→    52→  User,
+    53→    53→  Mail,
+    54→    54→  WifiOff,
+    55→    55→  Wifi,
+    56→    56→  RefreshCw,
+    57→    57→} from 'lucide-react'
+    58→    58→
+    59→    59→// Types - renamed FillingSession to avoid conflict with next-auth Session
+    60→    60→interface FillingSession {
+    61→    61→  id: string
+    62→    62→  familyId: string
+    63→    63→  startTime: string
+    64→    64→  endTime: string | null
+    65→    65→  duration: number
+    66→    66→  createdAt: string
+    67→    67→}
+    68→    68→
+    69→    69→interface Family {
+    70→    70→  id: string
+    71→    71→  name: string
+    72→    72→  createdAt: string
+    73→    73→  sessions: FillingSession[]
+    74→    74→}
+    75→    75→
+    76→    76→interface AppSettings {
+    77→    77→  freeMinutesPerWeek: number
+    78→    78→  pricePerMinute: number
+    79→    79→  autoResetWeekly: boolean
+    80→    80→  resetDay: number
+    81→    81→  lastAutoReset: string | null
+    82→    82→  resendApiKey?: string | null
+    83→    83→}
+    84→    84→
+    85→    85→interface FamilyWithUsage extends Family {
+    86→    86→  weeklySeconds: number
+    87→    87→  activeSessionId: string | null
+    88→    88→  activeSessionStart: string | null
+    89→    89→}
+    90→    90→
+    91→    91→type ViewMode = 'dashboard' | 'log'
+    92→    92→
+    93→    93→// Toast types
+    94→    94→type ToastType = 'success' | 'error' | 'warning' | 'info'
+    95→    95→
+    96→    96→interface Toast {
+    97→    97→  id: string
+    98→    98→  type: ToastType
+    99→    99→  message: string
+   100→   100→  duration?: number
+   101→   101→}
+   102→   102→
+   103→   103→// Confirm dialog state
+   104→   104→interface ConfirmState {
+   105→   105→  open: boolean
+   106→   106→  title: string
+   107→   107→  message: string
+   108→   108→  confirmLabel: string
+   109→   109→  cancelLabel: string
+   110→   110→  variant: 'danger' | 'warning' | 'info'
+   111→   111→  onConfirm: () => void
+   112→   112→}
+   113→   113→
+   114→   114→export default function Home() {
+   115→   115→  const { data: session, status: sessionStatus } = useSession()
+   116→   116→  const { t, locale, dir } = useLanguage()
+   117→   117→  const { isOnline, pendingCount, isSyncing, syncNow, refreshPendingCount } = useOffline()
+   118→   118→  const { localAuth, localSignOut } = useLocalAuth()
+   119→   119→
+   120→   120→  // Determine if user is authenticated (via NextAuth OR local auth)
+   121→   121→  const isAuthenticated = sessionStatus === 'authenticated' || localAuth.isAuthenticated
+   122→   122→  const currentUser = localAuth.loginMethod === 'local' ? localAuth.user : session?.user
+   123→   123→  const [families, setFamilies] = useState<FamilyWithUsage[]>([])
+   124→   124→  const [settings, setSettings] = useState<AppSettings>({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, resetDay: 6, lastAutoReset: null, resendApiKey: null })
+   125→   125→  const [newFamilyName, setNewFamilyName] = useState('')
+   126→   126→  const [addDialogOpen, setAddDialogOpen] = useState(false)
+   127→   127→  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
+   128→   128→  const [editFamilyDialogOpen, setEditFamilyDialogOpen] = useState(false)
+   129→   129→  const [editingFamily, setEditingFamily] = useState<{ id: string; name: string } | null>(null)
+   130→   130→  const [editFamilyName, setEditFamilyName] = useState('')
+   131→   131→  const [settingsForm, setSettingsForm] = useState<AppSettings>({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, resetDay: 6, lastAutoReset: null, resendApiKey: null })
+   132→   132→  const [timers, setTimers] = useState<Record<string, number>>({})
+   133→   133→  const [loading, setLoading] = useState(true)
+   134→   134→  const [expandedFamily, setExpandedFamily] = useState<string | null>(null)
+   135→   135→  const [currentView, setCurrentView] = useState<ViewMode>('dashboard')
+   136→   136→  const [logSearch, setLogSearch] = useState('')
+   137→   137→  const [selectedLogFamily, setSelectedLogFamily] = useState<string | null>(null)
+   138→   138→  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
+   139→   139→  const [showInstallBanner, setShowInstallBanner] = useState(false)
+   140→   140→  const timerIntervals = useRef<Record<string, NodeJS.Timeout>>({})
+   141→   141→
+   142→   142→  // Toast system
+   143→   143→  const [toasts, setToasts] = useState<Toast[]>([])
+   144→   144→  const toastTimers = useRef<Record<string, NodeJS.Timeout>>({})
+   145→   145→
+   146→   146→  // Confirm dialog
+   147→   147→  const [confirmState, setConfirmState] = useState<ConfirmState>({
+   148→   148→    open: false, title: '', message: '', confirmLabel: t('confirm'), cancelLabel: t('cancel'), variant: 'danger', onConfirm: () => {}
+   149→   149→  })
+   150→   150→
+   151→   151→  const showToast = useCallback((type: ToastType, message: string, duration = 3000) => {
+   152→   152→    const id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5)
+   153→   153→    setToasts((prev) => [...prev, { id, type, message, duration }])
+   154→   154→    if (duration > 0) {
+   155→   155→      toastTimers.current[id] = setTimeout(() => {
+   156→   156→        setToasts((prev) => prev.filter((t) => t.id !== id))
+   157→   157→        delete toastTimers.current[id]
+   158→   158→      }, duration)
+   159→   159→    }
+   160→   160→  }, [])
+   161→   161→
+   162→   162→  const removeToast = useCallback((id: string) => {
+   163→   163→    setToasts((prev) => prev.filter((t) => t.id !== id))
+   164→   164→    if (toastTimers.current[id]) {
+   165→   165→      clearTimeout(toastTimers.current[id])
+   166→   166→      delete toastTimers.current[id]
+   167→   167→    }
+   168→   168→  }, [])
+   169→   169→
+   170→   170→  const showConfirm = useCallback((title: string, message: string, onConfirm: () => void, variant: 'danger' | 'warning' | 'info' = 'danger') => {
+   171→   171→    setConfirmState({
+   172→   172→      open: true,
+   173→   173→      title,
+   174→   174→      message,
+   175→   175→      confirmLabel: variant === 'danger' ? t('delete') : variant === 'warning' ? t('confirm') : t('confirm'),
+   176→   176→      cancelLabel: t('cancel'),
+   177→   177→      variant,
+   178→   178→      onConfirm: () => {
+   179→   179→        setConfirmState((prev) => ({ ...prev, open: false }))
+   180→   180→        onConfirm()
+   181→   181→      },
+   182→   182→    })
+   183→   183→  }, [t])
+   184→   184→
+   185→   185→  const freeMin = settings.freeMinutesPerWeek
+   186→   186→  const priceMin = settings.pricePerMinute
+   187→   187→
+   188→   188→  const dayNames = getDayNames(locale)
+   189→   189→  const resetDayName = dayNames[settings.resetDay ?? 6] || dayNames[6]
+   190→   190→
+   191→   191→  const getWeekStart = (resetDay: number): Date => {
+   192→   192→    const now = new Date()
+   193→   193→    const dayOfWeek = now.getDay()
+   194→   194→    const daysSinceResetDay = (dayOfWeek - resetDay + 7) % 7
+   195→   195→    const weekStart = new Date(now)
+   196→   196→    weekStart.setDate(now.getDate() - daysSinceResetDay)
+   197→   197→    weekStart.setHours(0, 0, 0, 0)
+   198→   198→    return weekStart
+   199→   199→  }
+   200→   200→
+   201→   201→  // Timer management
+   202→   202→  const startTimerInterval = useCallback((familyId: string) => {
+   203→   203→    if (timerIntervals.current[familyId]) return
+   204→   204→    timerIntervals.current[familyId] = setInterval(() => {
+   205→   205→      setTimers((prev) => ({ ...prev, [familyId]: (prev[familyId] || 0) + 1 }))
+   206→   206→    }, 1000)
+   207→   207→  }, [])
+   208→   208→
+   209→   209→  const stopTimerInterval = useCallback((familyId: string) => {
+   210→   210→    if (timerIntervals.current[familyId]) {
+   211→   211→      clearInterval(timerIntervals.current[familyId])
+   212→   212→      delete timerIntervals.current[familyId]
+   213→   213→    }
+   214→   214→  }, [])
+   215→   215→
+   216→   216→  // PWA install prompt
+   217→   217→  useEffect(() => {
+   218→   218→    const handler = (e: Event) => {
+   219→   219→      e.preventDefault()
+   220→   220→      setInstallPrompt(e as BeforeInstallPromptEvent)
+   221→   221→      setShowInstallBanner(true)
+   222→   222→    }
+   223→   223→    window.addEventListener('beforeinstallprompt', handler)
+   224→   224→    if ('serviceWorker' in navigator) {
+   225→   225→      navigator.serviceWorker.register('/sw.js').catch(() => {})
+   226→   226→    }
+   227→   227→    return () => window.removeEventListener('beforeinstallprompt', handler)
+   228→   228→  }, [])
+   229→   229→
+   230→   230→  const handleInstall = async () => {
+   231→   231→    if (!installPrompt) return
+   232→   232→    installPrompt.prompt()
+   233→   233→    const result = await installPrompt.userChoice
+   234→   234→    if (result.outcome === 'accepted') {
+   235→   235→      setShowInstallBanner(false)
+   236→   236→      showToast('success', t('installSuccess'))
+   237→   237→    }
+   238→   238→    setInstallPrompt(null)
+   239→   239→  }
+   240→   240→
+   241→   241→  // ====== API-BASED DATA OPERATIONS ======
+   242→   242→
+   243→   243→  const refreshFamilies = useCallback(async () => {
+   244→   244→    try {
+   245→   245→      const [familiesRes, settingsRes] = await Promise.all([
+   246→   246→        authFetch(apiUrl('/api/families')),
+   247→   247→        authFetch(apiUrl('/api/settings')),
+   248→   248→      ])
+   249→   249→
+   250→   250→      if (!familiesRes.ok || !settingsRes.ok) throw new Error('API error')
+   251→   251→
+   252→   252→      const data: Family[] = await familiesRes.json()
+   253→   253→      const currentSettings: AppSettings = await settingsRes.json()
+   254→   254→
+   255→   255→      // Cache data for offline use
+   256→   256→      await cacheFamilies(data)
+   257→   257→      await cacheSettings(currentSettings)
+   258→   258→
+   259→   259→      setSettings(currentSettings)
+   260→   260→
+   261→   261→      const familiesWithUsage: FamilyWithUsage[] = data.map((family) => {
+   262→   262→        const weekStart = getWeekStart(currentSettings.resetDay ?? 6)
+   263→   263→        const weeklySessions = (family.sessions || []).filter((s) => new Date(s.startTime) >= weekStart)
+   264→   264→        const weeklySeconds = weeklySessions.reduce((acc, s) => acc + (s.duration || 0), 0)
+   265→   265→        const activeSession = (family.sessions || []).find((s) => !s.endTime)
+   266→   266→
+   267→   267→        return {
+   268→   268→          ...family,
+   269→   269→          weeklySeconds,
+   270→   270→          activeSessionId: activeSession?.id || null,
+   271→   271→          activeSessionStart: activeSession?.startTime || null,
+   272→   272→        }
+   273→   273→      })
+   274→   274→
+   275→   275→      setFamilies(familiesWithUsage)
+   276→   276→
+   277→   277→      familiesWithUsage.forEach((family) => {
+   278→   278→        if (family.activeSessionId && family.activeSessionStart) {
+   279→   279→          const elapsed = Math.floor((Date.now() - new Date(family.activeSessionStart).getTime()) / 1000)
+   280→   280→          setTimers((prev) => ({ ...prev, [family.id]: elapsed }))
+   281→   281→          startTimerInterval(family.id)
+   282→   282→        }
+   283→   283→      })
+   284→   284→    } catch {
+   285→   285→      // API failed - try cached data
+   286→   286→      try {
+   287→   287→        const cachedFamiliesData = await getCachedFamilies()
+   288→   288→        const cachedSettingsData = await getCachedSettings()
+   289→   289→        if (cachedFamiliesData && cachedSettingsData) {
+   290→   290→          setSettings(cachedSettingsData)
+   291→   291→
+   292→   292→          const familiesWithUsage: FamilyWithUsage[] = cachedFamiliesData.map((family: Family) => {
+   293→   293→            const weekStart = getWeekStart(cachedSettingsData.resetDay ?? 6)
+   294→   294→            const weeklySessions = (family.sessions || []).filter((s) => new Date(s.startTime) >= weekStart)
+   295→   295→            const weeklySeconds = weeklySessions.reduce((acc, s) => acc + (s.duration || 0), 0)
+   296→   296→            const activeSession = (family.sessions || []).find((s) => !s.endTime)
+   297→   297→
+   298→   298→            return {
+   299→   299→              ...family,
+   300→   300→              weeklySeconds,
+   301→   301→              activeSessionId: activeSession?.id || null,
+   302→   302→              activeSessionStart: activeSession?.startTime || null,
+   303→   303→            }
+   304→   304→          })
+   305→   305→
+   306→   306→          setFamilies(familiesWithUsage)
+   307→   307→
+   308→   308→          familiesWithUsage.forEach((family) => {
+   309→   309→            if (family.activeSessionId && family.activeSessionStart) {
+   310→   310→              const elapsed = Math.floor((Date.now() - new Date(family.activeSessionStart).getTime()) / 1000)
+   311→   311→              setTimers((prev) => ({ ...prev, [family.id]: elapsed }))
+   312→   312→              startTimerInterval(family.id)
+   313→   313→            }
+   314→   314→          })
+   315→   315→
+   316→   316→          if (!navigator.onLine) {
+   317→   317→            showToast('warning', t('usingCachedData'))
+   318→   318→          }
+   319→   319→        } else {
+   320→   320→          showToast('error', t('dataLoadError'))
+   321→   321→        }
+   322→   322→      } catch {
+   323→   323→        showToast('error', t('dataLoadError'))
+   324→   324→      }
+   325→   325→    }
+   326→   326→  }, [startTimerInterval, showToast, t])
+   327→   327→
+   328→   328→  useEffect(() => {
+   329→   329→    const init = async () => {
+   330→   330→      if (isAuthenticated) {
+   331→   331→        await refreshFamilies()
+   332→   332→      }
+   333→   333→      setLoading(false)
+   334→   334→    }
+   335→   335→    init()
+   336→   336→    return () => { Object.values(timerIntervals.current).forEach(clearInterval) }
+   337→   337→  }, [refreshFamilies, isAuthenticated])
+   338→   338→
+   339→   339→  // Family operations via API
+   340→   340→  const addFamily = async () => {
+   341→   341→    if (!newFamilyName.trim()) return
+   342→   342→    const familyNameCopy = newFamilyName.trim()
+   343→   343→
+   344→   344→    if (!navigator.onLine) {
+   345→   345→      // Offline: queue the operation and add locally
+   346→   346→      const tempId = 'temp-' + Date.now()
+   347→   347→      await addPendingOperation({
+   348→   348→        type: 'create-family',
+   349→   349→        url: apiUrl('/api/families'),
+   350→   350→        method: 'POST',
+   351→   351→        body: { name: familyNameCopy },
+   352→   352→        tempId,
+   353→   353→      })
+   354→   354→      const tempFamily: FamilyWithUsage = {
+   355→   355→        id: tempId,
+   356→   356→        name: familyNameCopy,
+   357→   357→        createdAt: new Date().toISOString(),
+   358→   358→        sessions: [],
+   359→   359→        weeklySeconds: 0,
+   360→   360→        activeSessionId: null,
+   361→   361→        activeSessionStart: null,
+   362→   362→      }
+   363→   363→      setFamilies((prev) => [...prev, tempFamily])
+   364→   364→      const currentCached = await getCachedFamilies()
+   365→   365→      await cacheFamilies([...(currentCached || []), { id: tempId, name: familyNameCopy, createdAt: new Date().toISOString(), sessions: [] }])
+   366→   366→      setNewFamilyName('')
+   367→   367→      setAddDialogOpen(false)
+   368→   368→      refreshPendingCount()
+   369→   369→      showToast('info', t('operationQueued'))
+   370→   370→      return
+   371→   371→    }
+   372→   372→
+   373→   373→    try {
+   374→   374→      const res = await authFetch(apiUrl('/api/families'), {
+   375→   375→        method: 'POST',
+   376→   376→        headers: { 'Content-Type': 'application/json' },
+   377→   377→        body: JSON.stringify({ name: familyNameCopy }),
+   378→   378→      })
+   379→   379→      if (!res.ok) throw new Error()
+   380→   380→      setNewFamilyName('')
+   381→   381→      setAddDialogOpen(false)
+   382→   382→      await refreshFamilies()
+   383→   383→      showToast('success', `${t('addFamilySuccess')} "${familyNameCopy}"`)
+   384→   384→    } catch {
+   385→   385→      showToast('error', t('addFamilyError'))
+   386→   386→    }
+   387→   387→  }
+   388→   388→
+   389→   389→  const deleteFamily = (id: string, name: string) => {
+   390→   390→    showConfirm(
+   391→   391→      t('deleteFamily'),
+   392→   392→      `${t('deleteFamilyConfirm')} "${name}"؟ ${t('deleteFamilyWarning')}`,
+   393→   393→      async () => {
+   394→   394→        if (!navigator.onLine) {
+   395→   395→          await addPendingOperation({
+   396→   396→            type: 'delete-family',
+   397→   397→            url: apiUrl(`/api/families/${id}`),
+   398→   398→            method: 'DELETE',
+   399→   399→          })
+   400→   400→          stopTimerInterval(id)
+   401→   401→          setTimers((prev) => { const n = { ...prev }; delete n[id]; return n })
+   402→   402→          setFamilies((prev) => prev.filter((f) => f.id !== id))
+   403→   403→          const currentCached = await getCachedFamilies()
+   404→   404→          await cacheFamilies((currentCached || []).filter((f: any) => f.id !== id))
+   405→   405→          refreshPendingCount()
+   406→   406→          showToast('info', t('operationQueued'))
+   407→   407→          return
+   408→   408→        }
+   409→   409→        try {
+   410→   410→          const res = await authFetch(apiUrl(`/api/families/${id}`), { method: 'DELETE' })
+   411→   411→          if (!res.ok) throw new Error()
+   412→   412→          stopTimerInterval(id)
+   413→   413→          setTimers((prev) => { const n = { ...prev }; delete n[id]; return n })
+   414→   414→          await refreshFamilies()
+   415→   415→          showToast('success', `${t('deleteFamilySuccess')} "${name}"`)
+   416→   416→        } catch {
+   417→   417→          showToast('error', t('deleteFamilyError'))
+   418→   418→        }
+   419→   419→      },
+   420→   420→      'danger'
+   421→   421→    )
+   422→   422→  }
+   423→   423→
+   424→   424→  const openEditFamily = (family: FamilyWithUsage) => {
+   425→   425→    setEditingFamily({ id: family.id, name: family.name })
+   426→   426→    setEditFamilyName(family.name)
+   427→   427→    setEditFamilyDialogOpen(true)
+   428→   428→  }
+   429→   429→
+   430→   430→  const saveEditFamily = async () => {
+   431→   431→    if (!editingFamily || !editFamilyName.trim()) return
+   432→   432→    const editId = editingFamily.id
+   433→   433→    const editName = editFamilyName.trim()
+   434→   434→
+   435→   435→    if (!navigator.onLine) {
+   436→   436→      await addPendingOperation({
+   437→   437→        type: 'rename-family',
+   438→   438→        url: apiUrl(`/api/families/${editId}`),
+   439→   439→        method: 'PUT',
+   440→   440→        body: { name: editName },
+   441→   441→      })
+   442→   442→      setFamilies((prev) => prev.map((f) => f.id === editId ? { ...f, name: editName } : f))
+   443→   443→      const currentCached = await getCachedFamilies()
+   444→   444→      await cacheFamilies((currentCached || []).map((f: any) => f.id === editId ? { ...f, name: editName } : f))
+   445→   445→      setEditFamilyDialogOpen(false)
+   446→   446→      setEditingFamily(null)
+   447→   447→      refreshPendingCount()
+   448→   448→      showToast('info', t('operationQueued'))
+   449→   449→      return
+   450→   450→    }
+   451→   451→
+   452→   452→    try {
+   453→   453→      const res = await authFetch(apiUrl(`/api/families/${editId}`), {
+   454→   454→        method: 'PUT',
+   455→   455→        headers: { 'Content-Type': 'application/json' },
+   456→   456→        body: JSON.stringify({ name: editName }),
+   457→   457→      })
+   458→   458→      if (!res.ok) throw new Error()
+   459→   459→      setEditFamilyDialogOpen(false)
+   460→   460→      setEditingFamily(null)
+   461→   461→      await refreshFamilies()
+   462→   462→      showToast('success', t('editFamilySuccess'))
+   463→   463→    } catch {
+   464→   464→      showToast('error', t('editFamilyError'))
+   465→   465→    }
+   466→   466→  }
+   467→   467→
+   468→   468→  const handleStartSession = async (familyId: string) => {
+   469→   469→    if (!navigator.onLine) {
+   470→   470→      // Offline: create a temp session, start timer locally, queue operation
+   471→   471→      const tempSessionId = 'temp-session-' + Date.now()
+   472→   472→      const now = new Date().toISOString()
+   473→   473→      await addPendingOperation({
+   474→   474→        type: 'start-session',
+   475→   475→        url: apiUrl(`/api/families/${familyId}/start`),
+   476→   476→        method: 'POST',
+   477→   477→        tempId: tempSessionId,
+   478→   478→      })
+   479→   479→      setTimers((prev) => ({ ...prev, [familyId]: 0 }))
+   480→   480→      startTimerInterval(familyId)
+   481→   481→      setFamilies((prev) => prev.map((f) =>
+   482→   482→        f.id === familyId ? { ...f, activeSessionId: tempSessionId, activeSessionStart: now } : f
+   483→   483→      ))
+   484→   484→      refreshPendingCount()
+   485→   485→      showToast('info', t('operationQueued'))
+   486→   486→      return
+   487→   487→    }
+   488→   488→
+   489→   489→    try {
+   490→   490→      const res = await authFetch(apiUrl(`/api/families/${familyId}/start`), { method: 'POST' })
+   491→   491→      const data = await res.json()
+   492→   492→      if (!res.ok) {
+   493→   493→        showToast('error', data.error || t('sessionStartError'))
+   494→   494→        return
+   495→   495→      }
+   496→   496→      setTimers((prev) => ({ ...prev, [familyId]: 0 }))
+   497→   497→      startTimerInterval(familyId)
+   498→   498→      await refreshFamilies()
+   499→   499→      showToast('info', t('sessionStarted'), 2000)
+   500→   500→    } catch {
+   501→   501→      showToast('error', t('sessionStartError'))
+   502→   502→    }
+   503→   503→  }
+   504→   504→
+   505→   505→  const handleStopSession = async (familyId: string, sessionId: string) => {
+   506→   506→    const elapsed = timers[familyId] || 0
+   507→   507→
+   508→   508→    if (!navigator.onLine) {
+   509→   509→      // Offline: queue the stop operation with duration, stop timer locally
+   510→   510→      await addPendingOperation({
+   511→   511→        type: 'stop-session',
+   512→   512→        url: apiUrl(`/api/families/${familyId}/stop`),
+   513→   513→        method: 'POST',
+   514→   514→        body: { sessionId, duration: elapsed },
+   515→   515→      })
+   516→   516→      stopTimerInterval(familyId)
+   517→   517→      setTimers((prev) => { const n = { ...prev }; delete n[familyId]; return n })
+   518→   518→      setFamilies((prev) => prev.map((f) =>
+   519→   519→        f.id === familyId ? { ...f, activeSessionId: null, activeSessionStart: null } : f
+   520→   520→      ))
+   521→   521→      refreshPendingCount()
+   522→   522→      const mins = (elapsed / 60).toFixed(1)
+   523→   523→      showToast('info', `${t('operationQueued')} - ${t('duration')}: ${mins} ${t('minute')}`)
+   524→   524→      return
+   525→   525→    }
+   526→   526→
+   527→   527→    try {
+   528→   528→      const res = await authFetch(apiUrl(`/api/families/${familyId}/stop`), {
+   529→   529→        method: 'POST',
+   530→   530→        headers: { 'Content-Type': 'application/json' },
+   531→   531→        body: JSON.stringify({ sessionId, duration: elapsed }),
+   532→   532→      })
+   533→   533→      if (!res.ok) throw new Error()
+   534→   534→      stopTimerInterval(familyId)
+   535→   535→      await refreshFamilies()
+   536→   536→      const mins = (elapsed / 60).toFixed(1)
+   537→   537→      showToast('success', `${t('sessionStopSuccess')} - ${t('duration')}: ${mins} ${t('minute')}`)
+   538→   538→    } catch {
+   539→   539→      showToast('error', t('sessionStopError'))
+   540→   540→    }
+   541→   541→  }
+   542→   542→
+   543→   543→  const resetWeekly = (familyId: string, familyName: string) => {
+   544→   544→    showConfirm(
+   545→   545→      t('resetUsage'),
+   546→   546→      `${t('resetConfirm')} "${familyName}"؟`,
+   547→   547→      async () => {
+   548→   548→        if (!navigator.onLine) {
+   549→   549→          await addPendingOperation({
+   550→   550→            type: 'reset-family',
+   551→   551→            url: apiUrl(`/api/families/${familyId}/reset`),
+   552→   552→            method: 'POST',
+   553→   553→          })
+   554→   554→          stopTimerInterval(familyId)
+   555→   555→          setTimers((prev) => { const n = { ...prev }; delete n[familyId]; return n })
+   556→   556→          setFamilies((prev) => prev.map((f) =>
+   557→   557→            f.id === familyId ? { ...f, weeklySeconds: 0, activeSessionId: null, activeSessionStart: null, sessions: f.sessions?.filter((s) => !s.endTime) || [] } : f
+   558→   558→          ))
+   559→   559→          refreshPendingCount()
+   560→   560→          showToast('info', t('operationQueued'))
+   561→   561→          return
+   562→   562→        }
+   563→   563→        try {
+   564→   564→          const res = await authFetch(apiUrl(`/api/families/${familyId}/reset`), { method: 'POST' })
+   565→   565→          if (!res.ok) throw new Error()
+   566→   566→          stopTimerInterval(familyId)
+   567→   567→          setTimers((prev) => { const n = { ...prev }; delete n[familyId]; return n })
+   568→   568→          await refreshFamilies()
+   569→   569→          showToast('success', `${t('resetSuccess')} "${familyName}"`)
+   570→   570→        } catch {
+   571→   571→          showToast('error', t('resetError'))
+   572→   572→        }
+   573→   573→      },
+   574→   574→      'warning'
+   575→   575→    )
+   576→   576→  }
+   577→   577→
+   578→   578→  const resetAllCounters = () => {
+   579→   579→    showConfirm(
+   580→   580→      t('resetAllCounters'),
+   581→   581→      t('resetAllConfirm'),
+   582→   582→      async () => {
+   583→   583→        if (!navigator.onLine) {
+   584→   584→          await addPendingOperation({
+   585→   585→            type: 'reset-all',
+   586→   586→            url: apiUrl('/api/reset-all'),
+   587→   587→            method: 'POST',
+   588→   588→            body: {},
+   589→   589→          })
+   590→   590→          families.forEach((family) => {
+   591→   591→            if (family.activeSessionId) stopTimerInterval(family.id)
+   592→   592→          })
+   593→   593→          setTimers({})
+   594→   594→          setFamilies((prev) => prev.map((f) => ({ ...f, weeklySeconds: 0, activeSessionId: null, activeSessionStart: null, sessions: [] })))
+   595→   595→          refreshPendingCount()
+   596→   596→          showToast('info', t('operationQueued'))
+   597→   597→          return
+   598→   598→        }
+   599→   599→        try {
+   600→   600→          const res = await authFetch(apiUrl('/api/reset-all'), {
+   601→   601→            method: 'POST',
+   602→   602→            headers: { 'Content-Type': 'application/json' },
+   603→   603→            body: JSON.stringify({}),
+   604→   604→          })
+   605→   605→          if (!res.ok) throw new Error()
+   606→   606→          families.forEach((family) => {
+   607→   607→            if (family.activeSessionId) stopTimerInterval(family.id)
+   608→   608→          })
+   609→   609→          setTimers({})
+   610→   610→          await refreshFamilies()
+   611→   611→          showToast('success', t('resetAllSuccess'))
+   612→   612→        } catch {
+   613→   613→          showToast('error', t('resetAllError'))
+   614→   614→        }
+   615→   615→      },
+   616→   616→      'warning'
+   617→   617→    )
+   618→   618→  }
+   619→   619→
+   620→   620→  // Settings operations via API
+   621→   621→  const openSettings = () => {
+   622→   622→    setSettingsForm({ ...settings })
+   623→   623→    setSettingsDialogOpen(true)
+   624→   624→  }
+   625→   625→
+   626→   626→  const saveSettingsForm = async () => {
+   627→   627→    if (settingsForm.freeMinutesPerWeek <= 0 || settingsForm.pricePerMinute < 0) return
+   628→   628→
+   629→   629→    if (!navigator.onLine) {
+   630→   630→      await addPendingOperation({
+   631→   631→        type: 'update-settings',
+   632→   632→        url: apiUrl('/api/settings'),
+   633→   633→        method: 'PUT',
+   634→   634→        body: settingsForm,
+   635→   635→      })
+   636→   636→      setSettings(settingsForm)
+   637→   637→      setSettingsDialogOpen(false)
+   638→   638→      refreshPendingCount()
+   639→   639→      showToast('info', t('operationQueued'))
+   640→   640→      return
+   641→   641→    }
+   642→   642→
+   643→   643→    try {
+   644→   644→      const res = await authFetch(apiUrl('/api/settings'), {
+   645→   645→        method: 'PUT',
+   646→   646→        headers: { 'Content-Type': 'application/json' },
+   647→   647→        body: JSON.stringify(settingsForm),
+   648→   648→      })
+   649→   649→      if (!res.ok) throw new Error()
+   650→   650→      setSettingsDialogOpen(false)
+   651→   651→      await refreshFamilies()
+   652→   652→      showToast('success', t('savedSuccessfully'))
+   653→   653→    } catch {
+   654→   654→      showToast('error', t('settingsError'))
+   655→   655→    }
+   656→   656→  }
+   657→   657→
+   658→   658→  const handleResetSettings = async () => {
+   659→   659→    const defaultSettings = {
+   660→   660→      freeMinutesPerWeek: 12,
+   661→   661→      pricePerMinute: 0.5,
+   662→   662→      autoResetWeekly: true,
+   663→   663→      resetDay: 6,
+   664→   664→      lastAutoReset: null,
+   665→   665→    }
+   666→   666→
+   667→   667→    if (!navigator.onLine) {
+   668→   668→      await addPendingOperation({
+   669→   669→        type: 'update-settings',
+   670→   670→        url: apiUrl('/api/settings'),
+   671→   671→        method: 'PUT',
+   672→   672→        body: defaultSettings,
+   673→   673→      })
+   674→   674→      setSettingsForm({ ...defaultSettings, resendApiKey: settingsForm.resendApiKey })
+   675→   675→      setSettings({ ...defaultSettings, resendApiKey: settings.resendApiKey })
+   676→   676→      refreshPendingCount()
+   677→   677→      showToast('info', t('operationQueued'))
+   678→   678→      return
+   679→   679→    }
+   680→   680→
+   681→   681→    try {
+   682→   682→      const res = await authFetch(apiUrl('/api/settings'), {
+   683→   683→        method: 'PUT',
+   684→   684→        headers: { 'Content-Type': 'application/json' },
+   685→   685→        body: JSON.stringify(defaultSettings),
+   686→   686→      })
+   687→   687→      if (!res.ok) throw new Error()
+   688→   688→      setSettingsForm({ ...defaultSettings, resendApiKey: settingsForm.resendApiKey })
+   689→   689→      await refreshFamilies()
+   690→   690→      showToast('info', t('restoreDefaultsSuccess'))
+   691→   691→    } catch {
+   692→   692→      showToast('error', t('settingsError'))
+   693→   693→    }
+   694→   694→  }
+   695→   695→
+   696→   696→  // Auto-reset check via API (skip when offline)
+   697→   697→  useEffect(() => {
+   698→   698→    const checkAutoReset = async () => {
+   699→   699→      if (!navigator.onLine) return // Skip auto-reset check when offline
+   700→   700→      try {
+   701→   701→        const res = await authFetch(apiUrl('/api/reset-all'), {
+   702→   702→          method: 'POST',
+   703→   703→          headers: { 'Content-Type': 'application/json' },
+   704→   704→          body: JSON.stringify({ checkAutoReset: true }),
+   705→   705→        })
+   706→   706→        const data = await res.json()
+   707→   707→        if (data.didReset) {
+   708→   708→          setTimers({})
+   709→   709→          Object.values(timerIntervals.current).forEach(clearInterval)
+   710→   710→          timerIntervals.current = {}
+   711→   711→          await refreshFamilies()
+   712→   712→          showToast('success', t('autoResetDone'), 4000)
+   713→   713→        }
+   714→   714→      } catch {
+   715→   715→        // Silently handle auto-reset errors
+   716→   716→      }
+   717→   717→    }
+   718→   718→
+   719→   719→    checkAutoReset()
+   720→   720→    const interval = setInterval(checkAutoReset, 60000)
+   721→   721→    return () => clearInterval(interval)
+   722→   722→  }, [refreshFamilies, showToast, t])
+   723→   723→
+   724→   724→  // Formatting helpers
+   725→   725→  const formatTime = (seconds: number): string => {
+   726→   726→    const mins = Math.floor(seconds / 60)
+   727→   727→    const secs = seconds % 60
+   728→   728→    const hours = Math.floor(mins / 60)
+   729→   729→    if (hours > 0) return `${hours.toString().padStart(2, '0')}:${(mins % 60).toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+   730→   730→    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+   731→   731→  }
+   732→   732→  const localeStr = locale === 'ar' ? 'ar-EG' : 'en-US'
+   733→   733→  const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString(localeStr, { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
+   734→   734→  const formatTimeOfDay = (dateStr: string) => new Date(dateStr).toLocaleTimeString(localeStr, { hour: '2-digit', minute: '2-digit' })
+   735→   735→
+   736→   736→  const calculateCost = (family: FamilyWithUsage) => {
+   737→   737→    const totalSeconds = family.weeklySeconds + (timers[family.id] || 0)
+   738→   738→    const totalMinutes = totalSeconds / 60
+   739→   739→    const freeMinutesVal = Math.min(totalMinutes, freeMin)
+   740→   740→    const paidMinutesVal = Math.max(0, totalMinutes - freeMin)
+   741→   741→    const cost = paidMinutesVal * priceMin
+   742→   742→    return { totalMinutes, freeMinutes: freeMinutesVal, paidMinutes: paidMinutesVal, cost }
+   743→   743→  }
+   744→   744→
+   745→   745→  const getUsagePercentage = (family: FamilyWithUsage) => {
+   746→   746→    const totalSeconds = family.weeklySeconds + (timers[family.id] || 0)
+   747→   747→    return Math.min((totalSeconds / 60 / freeMin) * 100, 100)
+   748→   748→  }
+   749→   749→
+   750→   750→  const isOverFreeLimit = (family: FamilyWithUsage) => (family.weeklySeconds + (timers[family.id] || 0)) / 60 > freeMin
+   751→   751→
+   752→   752→  const activeFamilyCount = families.filter((f) => f.activeSessionId).length
+   753→   753→  const totalRevenue = families.reduce((acc, f) => acc + calculateCost(f).cost, 0)
+   754→   754→  const totalFamiliesOverLimit = families.filter((f) => isOverFreeLimit(f)).length
+   755→   755→  const totalMinutesUsed = families.reduce((acc, f) => acc + f.weeklySeconds / 60, 0)
+   756→   756→
+   757→   757→  // Toast icon and style mapping
+   758→   758→  const toastConfig: Record<ToastType, { icon: typeof CheckCircle2; bg: string; border: string; iconColor: string; textColor: string }> = {
+   759→   759→    success: { icon: CheckCircle2, bg: 'bg-emerald-50 dark:bg-emerald-900/20', border: 'border-emerald-200 dark:border-emerald-800', iconColor: 'text-emerald-600 dark:text-emerald-400', textColor: 'text-emerald-800 dark:text-emerald-300' },
+   760→   760→    error: { icon: AlertCircle, bg: 'bg-red-50 dark:bg-red-900/20', border: 'border-red-200 dark:border-red-800', iconColor: 'text-red-600 dark:text-red-400', textColor: 'text-red-800 dark:text-red-300' },
+   761→   761→    warning: { icon: AlertTriangle, bg: 'bg-amber-50 dark:bg-amber-900/20', border: 'border-amber-200 dark:border-amber-800', iconColor: 'text-amber-600 dark:text-amber-400', textColor: 'text-amber-800 dark:text-amber-300' },
+   762→   762→    info: { icon: Info, bg: 'bg-cyan-50 dark:bg-cyan-900/20', border: 'border-cyan-200 dark:border-cyan-800', iconColor: 'text-cyan-600 dark:text-cyan-400', textColor: 'text-cyan-800 dark:text-cyan-300' },
+   763→   763→  }
+   764→   764→
+   765→   765→  // Show loading while session is being checked
+   766→   766→  if (sessionStatus === 'loading' || loading) {
+   767→   767→    return (
+   768→   768→      <div dir={dir} className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-emerald-50 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900 flex items-center justify-center">
+   769→   769→        <div className="text-center">
+   770→   770→          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center shadow-xl shadow-cyan-200 dark:shadow-cyan-900/30 mx-auto mb-4 animate-pulse">
+   771→   771→            <Droplets className="w-8 h-8 text-white" />
+   772→   772→          </div>
+   773→   773→          <p className="text-gray-500 dark:text-gray-400 text-sm">{t('loading')}</p>
+   774→   774→        </div>
+   775→   775→      </div>
+   776→   776→    )
+   777→   777→  }
+   778→   778→
+   779→   779→  // Redirect to signin if not authenticated (neither NextAuth nor local auth)
+   780→   780→  if (!isAuthenticated) {
+   781→   781→    if (typeof window !== 'undefined') {
+   782→   782→      window.location.href = '/signin'
+   783→   783→    }
+   784→   784→    return (
+   785→   785→      <div dir={dir} className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-emerald-50 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900 flex items-center justify-center">
+   786→   786→        <div className="text-center">
+   787→   787→          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center shadow-xl shadow-cyan-200 dark:shadow-cyan-900/30 mx-auto mb-4">
+   788→   788→            <Droplets className="w-8 h-8 text-white" />
+   789→   789→          </div>
+   790→   790→          <p className="text-gray-500 dark:text-gray-400 text-sm">{t('redirecting')}</p>
+   791→   791→        </div>
+   792→   792→      </div>
+   793→   793→    )
+   794→   794→  }
+   795→   795→
+   796→   796→  return (
+   797→   797→    <div dir={dir} className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-emerald-50 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900">
+   798→   798→      {/* ====== TOAST NOTIFICATIONS ====== */}
+   799→   799→      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-2 w-[90%] max-w-md">
+   800→   800→        {toasts.map((toast) => {
+   801→   801→          const config = toastConfig[toast.type]
+   802→   802→          const IconComp = config.icon
+   803→   803→          return (
+   804→   804→            <div
+   805→   805→              key={toast.id}
+   806→   806→              className={`${config.bg} ${config.border} border rounded-xl px-4 py-3 shadow-lg flex items-center gap-3 animate-in slide-in-from-top-4 fade-in duration-300`}
+   807→   807→            >
+   808→   808→              <IconComp className={`w-5 h-5 ${config.iconColor} flex-shrink-0`} />
+   809→   809→              <span className={`text-sm font-medium ${config.textColor} flex-1`}>{toast.message}</span>
+   810→   810→              <button onClick={() => removeToast(toast.id)} className={`${config.iconColor} hover:opacity-70 transition-opacity flex-shrink-0`}>
+   811→   811→                <X className="w-4 h-4" />
+   812→   812→              </button>
+   813→   813→            </div>
+   814→   814→          )
+   815→   815→        })}
+   816→   816→      </div>
+   817→   817→
+   818→   818→      {/* ====== CONFIRM DIALOG ====== */}
+   819→   819→      <Dialog open={confirmState.open} onOpenChange={(open) => { if (!open) setConfirmState((prev) => ({ ...prev, open: false })) }}>
+   820→   820→        <DialogContent className="sm:max-w-md" dir={dir}>
+   821→   821→          <DialogHeader>
+   822→   822→            <DialogTitle className={`flex items-center gap-2 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
+   823→   823→              {confirmState.variant === 'danger' && <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />}
+   824→   824→              {confirmState.variant === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />}
+   825→   825→              {confirmState.variant === 'info' && <Info className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />}
+   826→   826→              {confirmState.title}
+   827→   827→            </DialogTitle>
+   828→   828→          </DialogHeader>
+   829→   829→          <p className="text-sm text-gray-600 dark:text-gray-300 py-2">{confirmState.message}</p>
+   830→   830→          <DialogFooter className="gap-2">
+   831→   831→            <DialogClose asChild>
+   832→   832→              <Button variant="outline">{confirmState.cancelLabel}</Button>
+   833→   833→            </DialogClose>
+   834→   834→            <Button
+   835→   835→              onClick={confirmState.onConfirm}
+   836→   836→              className={
+   837→   837→                confirmState.variant === 'danger'
+   838→   838→                  ? 'bg-red-600 hover:bg-red-700 text-white gap-1.5'
+   839→   839→                  : confirmState.variant === 'warning'
+   840→   840→                  ? 'bg-amber-600 hover:bg-amber-700 text-white gap-1.5'
+   841→   841→                  : 'bg-cyan-600 hover:bg-cyan-700 text-white gap-1.5'
+   842→   842→              }
+   843→   843→            >
+   844→   844→              {confirmState.variant === 'danger' && <Trash2 className="w-3.5 h-3.5" />}
+   845→   845→              {confirmState.variant === 'warning' && <CheckCircle2 className="w-3.5 h-3.5" />}
+   846→   846→              {confirmState.variant === 'info' && <CheckCircle2 className="w-3.5 h-3.5" />}
+   847→   847→              {confirmState.confirmLabel}
+   848→   848→            </Button>
+   849→   849→          </DialogFooter>
+   850→   850→        </DialogContent>
+   851→   851→      </Dialog>
+   852→   852→
+   853→   853→      {/* PWA Install Banner */}
+   854→   854→      {showInstallBanner && (
+   855→   855→        <div className="bg-gradient-to-r from-cyan-600 to-emerald-600 text-white p-3 flex items-center justify-between gap-3 sticky top-0 z-[60]">
+   856→   856→          <div className="flex items-center gap-2">
+   857→   857→            <Download className="w-5 h-5" />
+   858→   858→            <span className="text-sm font-medium">{t('installBannerDesc')}</span>
+   859→   859→          </div>
+   860→   860→          <div className="flex items-center gap-2">
+   861→   861→            <Button size="sm" variant="secondary" onClick={handleInstall} className="gap-1"><Smartphone className="w-3 h-3" />{t('installBtn')}</Button>
+   862→   862→            <Button size="sm" variant="ghost" className="text-white hover:bg-white/20" onClick={() => setShowInstallBanner(false)}>✕</Button>
+   863→   863→          </div>
+   864→   864→        </div>
+   865→   865→      )}
+   866→   866→
+   867→   867→      {/* Offline indicator */}
+   868→   868→      {!isOnline && (
+   869→   869→        <div className="bg-amber-500 text-white px-3 py-1.5 text-xs font-medium flex items-center justify-between gap-2 z-[55]">
+   870→   870→          <div className="flex items-center gap-2">
+   871→   871→            <WifiOff className="w-3.5 h-3.5" />
+   872→   872→            <span>{t('offlineMode')}</span>
+   873→   873→            {pendingCount > 0 && (
+   874→   874→              <span className="bg-white/20 rounded-full px-2 py-0.5">
+   875→   875→                {pendingCount} {t('pendingOperations')}
+   876→   876→              </span>
+   877→   877→            )}
+   878→   878→          </div>
+   879→   879→          <button
+   880→   880→            onClick={async () => {
+   881→   881→              const result = await syncNow()
+   882→   882→              if (result && result.synced > 0) {
+   883→   883→                showToast('success', t('syncComplete'))
+   884→   884→                await refreshFamilies()
+   885→   885→              }
+   886→   886→            }}
+   887→   887→            disabled={isSyncing}
+   888→   888→            className="flex items-center gap-1 bg-white/20 hover:bg-white/30 rounded px-2 py-0.5 transition-colors disabled:opacity-50"
+   889→   889→          >
+   890→   890→            <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+   891→   891→            {isSyncing ? t('syncing') : t('syncNow')}
+   892→   892→          </button>
+   893→   893→        </div>
+   894→   894→      )}
+   895→   895→      {isOnline && pendingCount > 0 && (
+   896→   896→        <div className="bg-emerald-500 text-white px-3 py-1.5 text-xs font-medium flex items-center justify-between gap-2 z-[55]">
+   897→   897→          <div className="flex items-center gap-2">
+   898→   898→            <Wifi className="w-3.5 h-3.5" />
+   899→   899→            <span>{t('backOnline')}</span>
+   900→   900→            <span className="bg-white/20 rounded-full px-2 py-0.5">
+   901→   901→              {pendingCount} {t('pendingOperations')}
+   902→   902→            </span>
+   903→   903→          </div>
+   904→   904→          <button
+   905→   905→            onClick={async () => {
+   906→   906→              const result = await syncNow()
+   907→   907→              if (result && result.synced > 0) {
+   908→   908→                showToast('success', t('syncComplete'))
+   909→   909→                await refreshFamilies()
+   910→   910→              }
+   911→   911→            }}
+   912→   912→            disabled={isSyncing}
+   913→   913→            className="flex items-center gap-1 bg-white/20 hover:bg-white/30 rounded px-2 py-0.5 transition-colors disabled:opacity-50"
+   914→   914→          >
+   915→   915→            <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+   916→   916→            {isSyncing ? t('syncing') : t('syncNow')}
+   917→   917→          </button>
+   918→   918→        </div>
+   919→   919→      )}
+   920→   920→
+   921→   921→      {/* ====== HEADER ====== */}
+   922→   922→      <header className="sticky top-0 z-50 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-cyan-100 dark:border-gray-700 shadow-sm">
+   923→   923→        <div className="max-w-7xl mx-auto px-3 md:px-6 py-2 md:py-3 flex items-center justify-between">
+   924→   924→          {/* Logo & Title */}
+   925→   925→          <div className="flex items-center gap-2 md:gap-3">
+   926→   926→            <div className="w-9 h-9 md:w-11 md:h-11 rounded-xl bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center shadow-lg shadow-cyan-200 dark:shadow-cyan-900/30">
+   927→   927→              <Droplets className="w-5 h-5 md:w-6 md:h-6 text-white" />
+   928→   928→            </div>
+   929→   929→            <div>
+   930→   930→              <h1 className="text-base md:text-xl font-bold text-gray-800 dark:text-gray-100">{t('appName')}</h1>
+   931→   931→              <p className="text-[10px] md:text-xs text-gray-500 dark:text-gray-400">{t('appDesc')}</p>
+   932→   932→            </div>
+   933→   933→          </div>
+   934→   934→
+   935→   935→          {/* Action buttons */}
+   936→   936→          <div className="flex items-center gap-1 md:gap-2">
+   937→   937→            {/* Theme & Language Toggle */}
+   938→   938→            <ThemeLanguageToggle />
+   939→   939→
+   940→   940→            {activeFamilyCount > 0 && (
+   941→   941→              <Badge variant="default" className="bg-emerald-500 hover:bg-emerald-600 text-white gap-1 text-[10px] md:text-xs">
+   942→   942→                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+   943→   943→                <span className="hidden sm:inline">{activeFamilyCount} {t('active')}</span>
+   944→   944→                <span className="sm:hidden">{activeFamilyCount}</span>
+   945→   945→              </Badge>
+   946→   946→            )}
+   947→   947→
+   948→   948→            {/* Auto reset indicator */}
+   949→   949→            {settings.autoResetWeekly ? (
+   950→   950→              <div className="hidden md:flex items-center gap-1.5 bg-emerald-50/80 dark:bg-emerald-900/20 rounded-lg border border-emerald-200 dark:border-emerald-800 px-2.5 py-1.5">
+   951→   951→                <Zap className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+   952→   952→                <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">{t('auto')}</span>
+   953→   953→                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/40 rounded px-1 py-0.5 border border-emerald-300 dark:border-emerald-700">{resetDayName}</span>
+   954→   954→              </div>
+   955→   955→            ) : (
+   956→   956→              <Button variant="outline" size="sm" onClick={resetAllCounters} className="gap-1 text-xs border-red-300 dark:border-red-800 text-red-700 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-400 dark:hover:border-red-700 bg-red-50/50 dark:bg-red-900/10 font-semibold h-7 px-2" title={t('resetAllCounters')}>
+   957→   957→                <RotateCcw className="w-3.5 h-3.5" />
+   958→   958→                <span className="hidden sm:inline">{t('resetAll')}</span>
+   959→   959→              </Button>
+   960→   960→            )}
+   961→   961→
+   962→   962→            {/* Settings */}
+   963→   963→            <Button variant="outline" size="sm" onClick={openSettings} className="gap-1 md:gap-1.5 text-xs border-cyan-300 dark:border-cyan-800 text-cyan-700 dark:text-cyan-400 hover:text-cyan-800 dark:hover:text-cyan-300 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 hover:border-cyan-400 dark:hover:border-cyan-700 bg-cyan-50/50 dark:bg-cyan-900/10 font-semibold">
+   964→   964→              <Settings className="w-4 h-4" />
+   965→   965→              <span className="hidden md:inline">{t('settings')}</span>
+   966→   966→            </Button>
+   967→   967→
+   968→   968→            {/* Log view toggle */}
+   969→   969→            <Button
+   970→   970→              variant={currentView === 'log' ? 'default' : 'outline'}
+   971→   971→              size="sm"
+   972→   972→              className={`gap-1 md:gap-1.5 text-xs ${currentView === 'log' ? 'bg-gradient-to-r from-cyan-600 to-emerald-600 text-white border-transparent' : 'border-cyan-200 dark:border-cyan-800 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20'}`}
+   973→   973→              onClick={() => setCurrentView(currentView === 'log' ? 'dashboard' : 'log')}
+   974→   974→            >
+   975→   975→              <History className="w-3.5 h-3.5" />
+   976→   976→              <span className="hidden md:inline">{t('log')}</span>
+   977→   977→            </Button>
+   978→   978→
+   979→   979→            {/* Add family */}
+   980→   980→            <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+   981→   981→              <DialogTrigger asChild>
+   982→   982→                <Button size="sm" className="gap-1 md:gap-1.5 bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-700 hover:to-emerald-700 text-white shadow-md text-xs">
+   983→   983→                  <Plus className="w-3.5 h-3.5" />
+   984→   984→                  <span className="hidden sm:inline">{t('add')}</span>
+   985→   985→                </Button>
+   986→   986→              </DialogTrigger>
+   987→   987→              <DialogContent className="sm:max-w-md" dir={dir}>
+   988→   988→                <DialogHeader>
+   989→   989→                  <DialogTitle className={`flex items-center gap-2 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
+   990→   990→                    <Users className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+   991→   991→                    {t('addFamilyNew')}
+   992→   992→                  </DialogTitle>
+   993→   993→                </DialogHeader>
+   994→   994→                <div className="space-y-4 py-4">
+   995→   995→                  <div className="space-y-2">
+   996→   996→                    <Label>{t('familyName')}</Label>
+   997→   997→                    <Input placeholder={t('enterFamilyName')} value={newFamilyName} onChange={(e) => setNewFamilyName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addFamily()} className={dir === 'rtl' ? 'text-right' : 'text-left'} />
+   998→   998→                  </div>
+   999→   999→                </div>
+  1000→  1000→                <DialogFooter className="gap-2">
+  1001→  1001→                  <DialogClose asChild><Button variant="outline">{t('cancel')}</Button></DialogClose>
+  1002→  1002→                  <Button onClick={addFamily} disabled={!newFamilyName.trim()} className="bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-700 hover:to-emerald-700 text-white">{t('add')}</Button>
+  1003→  1003→                </DialogFooter>
+  1004→  1004→              </DialogContent>
+  1005→  1005→            </Dialog>
+  1006→  1006→
+  1007→  1007→            {/* User Menu */}
+  1008→  1008→            {currentUser && (
+  1009→  1009→              <div className="flex items-center gap-1.5">
+  1010→  1010→                <div className="hidden sm:flex items-center gap-1.5 bg-gradient-to-r from-cyan-50 to-emerald-50 dark:from-cyan-900/20 dark:to-emerald-900/20 border border-cyan-200 dark:border-cyan-800 rounded-lg px-2 py-1">
+  1011→  1011→                  {currentUser.image ? (
+  1012→  1012→                    <img src={currentUser.image} alt={currentUser.name || ''} className="w-5 h-5 rounded-full" />
+  1013→  1013→                  ) : (
+  1014→  1014→                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center">
+  1015→  1015→                      <User className="w-3 h-3 text-white" />
+  1016→  1016→                    </div>
+  1017→  1017→                  )}
+  1018→  1018→                  <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300 max-w-[80px] truncate">{currentUser.name || currentUser.email}</span>
+  1019→  1019→                </div>
+  1020→  1020→                <Button
+  1021→  1021→                  variant="outline"
+  1022→  1022→                  size="sm"
+  1023→  1023→                  onClick={async () => {
+  1024→  1024→                    if (localAuth.loginMethod === 'local') {
+  1025→  1025→                      await localSignOut()
+  1026→  1026→                      window.location.href = '/signin'
+  1027→  1027→                    } else {
+  1028→  1028→                      signOut({ callbackUrl: '/signin' })
+  1029→  1029→                    }
+  1030→  1030→                  }}
+  1031→  1031→                  className="gap-1 text-xs border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-300 dark:hover:border-red-800 h-7 px-2"
+  1032→  1032→                  title={t('signOut')}
+  1033→  1033→                >
+  1034→  1034→                  <LogOut className="w-3.5 h-3.5" />
+  1035→  1035→                  <span className="hidden md:inline">{t('signOutShort')}</span>
+  1036→  1036→                </Button>
+  1037→  1037→              </div>
+  1038→  1038→            )}
+  1039→  1039→          </div>
+  1040→  1040→        </div>
+  1041→  1041→      </header>
+  1042→  1042→
+  1043→  1043→      {/* ====== SETTINGS DIALOG ====== */}
+  1044→  1044→      <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
+  1045→  1045→        <DialogContent className="sm:max-w-md md:max-w-lg" dir={dir}>
+  1046→  1046→          <DialogHeader>
+  1047→  1047→            <DialogTitle className={`flex items-center gap-2 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
+  1048→  1048→              <Settings className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+  1049→  1049→              {t('appSettings')}
+  1050→  1050→            </DialogTitle>
+  1051→  1051→          </DialogHeader>
+  1052→  1052→          <div className="space-y-5 py-4">
+  1053→  1053→            <div className="space-y-2">
+  1054→  1054→              <Label htmlFor="free-minutes" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+  1055→  1055→                {t('freeMinutesWeekly')}
+  1056→  1056→              </Label>
+  1057→  1057→              <Input
+  1058→  1058→                id="free-minutes"
+  1059→  1059→                type="number"
+  1060→  1060→                min="1"
+  1061→  1061→                step="1"
+  1062→  1062→                value={settingsForm.freeMinutesPerWeek}
+  1063→  1063→                onChange={(e) => setSettingsForm((prev) => ({ ...prev, freeMinutesPerWeek: Number(e.target.value) || 0 }))}
+  1064→  1064→                className="text-center text-lg font-bold"
+  1065→  1065→              />
+  1066→  1066→              <p className="text-[10px] text-gray-400 dark:text-gray-500">{t('freeMinutesDesc')}</p>
+  1067→  1067→            </div>
+  1068→  1068→            <Separator />
+  1069→  1069→            <div className="space-y-2">
+  1070→  1070→              <Label htmlFor="price-minute" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+  1071→  1071→                {t('pricePerMinute')}
+  1072→  1072→              </Label>
+  1073→  1073→              <Input
+  1074→  1074→                id="price-minute"
+  1075→  1075→                type="number"
+  1076→  1076→                min="0"
+  1077→  1077→                step="0.1"
+  1078→  1078→                value={settingsForm.pricePerMinute}
+  1079→  1079→                onChange={(e) => setSettingsForm((prev) => ({ ...prev, pricePerMinute: Number(e.target.value) || 0 }))}
+  1080→  1080→                className="text-center text-lg font-bold"
+  1081→  1081→              />
+  1082→  1082→              <p className="text-[10px] text-gray-400 dark:text-gray-500">{t('priceDesc')}</p>
+  1083→  1083→            </div>
+  1084→  1084→            <Separator />
+  1085→  1085→            <div className="flex items-center justify-between">
+  1086→  1086→              <div className="space-y-0.5">
+  1087→  1087→                <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+  1088→  1088→                  <Zap className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+  1089→  1089→                  {t('autoResetWeekly')}
+  1090→  1090→                </Label>
+  1091→  1091→                <p className="text-[10px] text-gray-400 dark:text-gray-500">{t('autoResetDesc')}</p>
+  1092→  1092→              </div>
+  1093→  1093→              <Switch
+  1094→  1094→                checked={settingsForm.autoResetWeekly}
+  1095→  1095→                onCheckedChange={(checked) => setSettingsForm((prev) => ({ ...prev, autoResetWeekly: checked }))}
+  1096→  1096→                className="data-[state=checked]:bg-emerald-500"
+  1097→  1097→              />
+  1098→  1098→            </div>
+  1099→  1099→            {settingsForm.autoResetWeekly && (
+  1100→  1100→              <div className="space-y-2 bg-emerald-50/50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-3">
+  1101→  1101→                <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+  1102→  1102→                  <CalendarDays className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+  1103→  1103→                  {t('resetDay')}
+  1104→  1104→                </Label>
+  1105→  1105→                <div className="grid grid-cols-4 gap-1.5">
+  1106→  1106→                  {dayNames.map((name, index) => (
+  1107→  1107→                    <button
+  1108→  1108→                      key={index}
+  1109→  1109→                      type="button"
+  1110→  1110→                      onClick={() => setSettingsForm((prev) => ({ ...prev, resetDay: index }))}
+  1111→  1111→                      className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-all ${
+  1112→  1112→                        settingsForm.resetDay === index
+  1113→  1113→                          ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200 dark:shadow-emerald-900/30 border border-emerald-500'
+  1114→  1114→                          : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:border-emerald-300 dark:hover:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/20'
+  1115→  1115→                      }`}
+  1116→  1116→                    >
+  1117→  1117→                      {name}
+  1118→  1118→                    </button>
+  1119→  1119→                  ))}
+  1120→  1120→                </div>
+  1121→  1121→                <p className="text-[10px] text-gray-400 dark:text-gray-500">{t('resetDayAutoDesc')} {dayNames[settingsForm.resetDay ?? 6]}</p>
+  1122→  1122→              </div>
+  1123→  1123→            )}
+  1124→  1124→            <div className="bg-gradient-to-r from-cyan-50 to-emerald-50 dark:from-cyan-900/20 dark:to-emerald-900/20 border border-cyan-200 dark:border-cyan-800 rounded-xl p-3">
+  1125→  1125→              <p className="text-xs font-semibold text-cyan-800 dark:text-cyan-300 mb-1.5">{t('preview')}</p>
+  1126→  1126→              <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400">
+  1127→  1127→                <span>{t('freeLimit')}</span>
+  1128→  1128→                <span className="font-bold text-emerald-700 dark:text-emerald-400">{settingsForm.freeMinutesPerWeek} {t('minutesPerWeek')}</span>
+  1129→  1129→              </div>
+  1130→  1130→              <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mt-1">
+  1131→  1131→                <span>{t('extraPrice')}</span>
+  1132→  1132→                <span className="font-bold text-amber-700 dark:text-amber-400">{settingsForm.pricePerMinute} {t('shekelPerMinute')}</span>
+  1133→  1133→              </div>
+  1134→  1134→              <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mt-1">
+  1135→  1135→                <span>{t('resetModeLabel')}</span>
+  1136→  1136→                <span className={`font-bold ${settingsForm.autoResetWeekly ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}>
+  1137→  1137→                  {settingsForm.autoResetWeekly ? `${t('autoResetOn')} ${dayNames[settingsForm.resetDay ?? 6]}` : t('autoResetManual')}
+  1138→  1138→                </span>
+  1139→  1139→              </div>
+  1140→  1140→            </div>
+  1141→  1141→
+  1142→  1142→            {/* Email Settings */}
+  1143→  1143→            <Separator />
+  1144→  1144→            <div className="space-y-2">
+  1145→  1145→              <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+  1146→  1146→                <Mail className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+  1147→  1147→                {t('emailSettings')}
+  1148→  1148→              </Label>
+  1149→  1149→              <div className="flex items-center gap-2 mb-2">
+  1150→  1150→                <span className="text-[10px] text-gray-400 dark:text-gray-500">{t('emailServiceStatus')}:</span>
+  1151→  1151→                <span className={`text-[10px] font-bold ${settingsForm.resendApiKey ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+  1152→  1152→                  {settingsForm.resendApiKey ? t('emailServiceActive') : t('emailServiceInactive')}
+  1153→  1153→                </span>
+  1154→  1154→              </div>
+  1155→  1155→              <Input
+  1156→  1156→                type="password"
+  1157→  1157→                placeholder={t('resendApiKeyPlaceholder')}
+  1158→  1158→                value={settingsForm.resendApiKey || ''}
+  1159→  1159→                onChange={(e) => setSettingsForm((prev) => ({ ...prev, resendApiKey: e.target.value || null }))}
+  1160→  1160→                className="text-sm"
+  1161→  1161→                dir="ltr"
+  1162→  1162→              />
+  1163→  1163→              <p className="text-[10px] text-gray-400 dark:text-gray-500">
+  1164→  1164→                {t('resendApiKeyDesc')}
+  1165→  1165→                {' · '}
+  1166→  1166→                <a href="https://resend.com/signup" target="_blank" rel="noopener noreferrer" className="text-cyan-500 hover:text-cyan-600 dark:hover:text-cyan-300 underline">
+  1167→  1167→                  {t('getResendKey')}
+  1168→  1168→                </a>
+  1169→  1169→              </p>
+  1170→  1170→            </div>
+  1171→  1171→          </div>
+  1172→  1172→          <DialogFooter className="gap-2">
+  1173→  1173→            <Button variant="outline" size="sm" onClick={handleResetSettings} className="gap-1.5 text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300">
+  1174→  1174→              <RotateCcw className="w-3.5 h-3.5" />
+  1175→  1175→              {t('restoreDefaults')}
+  1176→  1176→            </Button>
+  1177→  1177→            <DialogClose asChild><Button variant="outline">{t('cancel')}</Button></DialogClose>
+  1178→  1178→            <Button onClick={saveSettingsForm} disabled={settingsForm.freeMinutesPerWeek <= 0 || settingsForm.pricePerMinute < 0} className="gap-1.5 bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-700 hover:to-emerald-700 text-white">
+  1179→  1179→              <Save className="w-3.5 h-3.5" />
+  1180→  1180→              {t('save')}
+  1181→  1181→            </Button>
+  1182→  1182→          </DialogFooter>
+  1183→  1183→        </DialogContent>
+  1184→  1184→      </Dialog>
+  1185→  1185→
+  1186→  1186→      {/* ====== EDIT FAMILY DIALOG ====== */}
+  1187→  1187→      <Dialog open={editFamilyDialogOpen} onOpenChange={setEditFamilyDialogOpen}>
+  1188→  1188→        <DialogContent className="sm:max-w-md" dir={dir}>
+  1189→  1189→          <DialogHeader>
+  1190→  1190→            <DialogTitle className={`flex items-center gap-2 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>
+  1191→  1191→              <Pencil className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+  1192→  1192→              {t('editFamily')}
+  1193→  1193→            </DialogTitle>
+  1194→  1194→          </DialogHeader>
+  1195→  1195→          <div className="space-y-4 py-4">
+  1196→  1196→            <div className="space-y-2">
+  1197→  1197→              <Label>{t('familyName')}</Label>
+  1198→  1198→              <Input
+  1199→  1199→                placeholder={t('enterNewName')}
+  1200→  1200→                value={editFamilyName}
+  1201→  1201→                onChange={(e) => setEditFamilyName(e.target.value)}
+  1202→  1202→                onKeyDown={(e) => e.key === 'Enter' && saveEditFamily()}
+  1203→  1203→                className={dir === 'rtl' ? 'text-right' : 'text-left'}
+  1204→  1204→              />
+  1205→  1205→            </div>
+  1206→  1206→          </div>
+  1207→  1207→          <DialogFooter className="gap-2">
+  1208→  1208→            <DialogClose asChild><Button variant="outline">{t('cancel')}</Button></DialogClose>
+  1209→  1209→            <Button onClick={saveEditFamily} disabled={!editFamilyName.trim()} className="gap-1.5 bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-700 hover:to-emerald-700 text-white">
+  1210→  1210→              <Save className="w-3.5 h-3.5" />
+  1211→  1211→              {t('saveEdit')}
+  1212→  1212→            </Button>
+  1213→  1213→          </DialogFooter>
+  1214→  1214→        </DialogContent>
+  1215→  1215→      </Dialog>
+  1216→  1216→
+  1217→  1217→      {/* ====== DASHBOARD VIEW ====== */}
+  1218→  1218→      {currentView === 'dashboard' && (
+  1219→  1219→        <>
+  1220→  1220→          {/* Stats Section - Responsive */}
+  1221→  1221→          <div className="max-w-7xl mx-auto px-3 md:px-6 mt-3 md:mt-4">
+  1222→  1222→            {/* Mobile: Settings info bar */}
+  1223→  1223→            <div className="md:hidden bg-gradient-to-r from-cyan-50 to-emerald-50 dark:from-cyan-900/20 dark:to-emerald-900/20 border border-cyan-200 dark:border-cyan-800 rounded-xl p-3 flex flex-wrap items-center gap-3 justify-between mb-3">
+  1224→  1224→              <div className="flex items-center gap-2">
+  1225→  1225→                <div className="w-8 h-8 rounded-lg bg-cyan-100 dark:bg-cyan-900/40 flex items-center justify-center">
+  1226→  1226→                  <Clock className="w-4 h-4 text-cyan-700 dark:text-cyan-400" />
+  1227→  1227→                </div>
+  1228→  1228→                <div>
+  1229→  1229→                  <p className="text-xs font-semibold text-cyan-800 dark:text-cyan-300">{t('freeLimitLabel')} {freeMin} {t('minutesPerWeek')}</p>
+  1230→  1230→                  <p className="text-[10px] text-cyan-600 dark:text-cyan-400">{t('extraPriceLabel')} {priceMin} {t('shekelPerMinute')}</p>
+  1231→  1231→                </div>
+  1232→  1232→              </div>
+  1233→  1233→              <div className="flex items-center gap-3 text-xs">
+  1234→  1234→                <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span><span className="text-gray-600 dark:text-gray-400">{t('free')}</span></div>
+  1235→  1235→                <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span><span className="text-gray-600 dark:text-gray-400">{t('paid')}</span></div>
+  1236→  1236→              </div>
+  1237→  1237→            </div>
+  1238→  1238→
+  1239→  1239→            {/* Desktop: Full stats dashboard */}
+  1240→  1240→            <div className="hidden md:grid grid-cols-4 gap-4 mb-4">
+  1241→  1241→              <Card className="border-cyan-200 dark:border-cyan-800 bg-gradient-to-br from-cyan-50 to-white dark:from-cyan-900/20 dark:to-gray-900 shadow-sm hover:shadow-md transition-shadow">
+  1242→  1242→                <CardContent className="p-4 flex items-center gap-3">
+  1243→  1243→                  <div className="w-12 h-12 rounded-xl bg-cyan-100 dark:bg-cyan-900/40 flex items-center justify-center flex-shrink-0">
+  1244→  1244→                    <Users className="w-6 h-6 text-cyan-600 dark:text-cyan-400" />
+  1245→  1245→                  </div>
+  1246→  1246→                  <div>
+  1247→  1247→                    <p className="text-2xl font-bold text-cyan-700 dark:text-cyan-400">{families.length}</p>
+  1248→  1248→                    <p className="text-xs text-gray-500 dark:text-gray-400">{t('totalFamilies')}</p>
+  1249→  1249→                  </div>
+  1250→  1250→                </CardContent>
+  1251→  1251→              </Card>
+  1252→  1252→              <Card className="border-emerald-200 dark:border-emerald-800 bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-900/20 dark:to-gray-900 shadow-sm hover:shadow-md transition-shadow">
+  1253→  1253→                <CardContent className="p-4 flex items-center gap-3">
+  1254→  1254→                  <div className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center flex-shrink-0">
+  1255→  1255→                    <Activity className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+  1256→  1256→                  </div>
+  1257→  1257→                  <div>
+  1258→  1258→                    <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-400">{activeFamilyCount}</p>
+  1259→  1259→                    <p className="text-xs text-gray-500 dark:text-gray-400">{t('activeNow')}</p>
+  1260→  1260→                  </div>
+  1261→  1261→                </CardContent>
+  1262→  1262→              </Card>
+  1263→  1263→              <Card className="border-amber-200 dark:border-amber-800 bg-gradient-to-br from-amber-50 to-white dark:from-amber-900/20 dark:to-gray-900 shadow-sm hover:shadow-md transition-shadow">
+  1264→  1264→                <CardContent className="p-4 flex items-center gap-3">
+  1265→  1265→                  <div className="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center flex-shrink-0">
+  1266→  1266→                    <DollarSign className="w-6 h-6 text-amber-600 dark:text-amber-400" />
+  1267→  1267→                  </div>
+  1268→  1268→                  <div>
+  1269→  1269→                    <p className="text-2xl font-bold text-amber-700 dark:text-amber-400">{totalRevenue.toFixed(2)}</p>
+  1270→  1270→                    <p className="text-xs text-gray-500 dark:text-gray-400">{t('totalRevenueShekel')}</p>
+  1271→  1271→                  </div>
+  1272→  1272→                </CardContent>
+  1273→  1273→              </Card>
+  1274→  1274→              <Card className="border-rose-200 dark:border-rose-800 bg-gradient-to-br from-rose-50 to-white dark:from-rose-900/20 dark:to-gray-900 shadow-sm hover:shadow-md transition-shadow">
+  1275→  1275→                <CardContent className="p-4 flex items-center gap-3">
+  1276→  1276→                  <div className="w-12 h-12 rounded-xl bg-rose-100 dark:bg-rose-900/40 flex items-center justify-center flex-shrink-0">
+  1277→  1277→                    <Timer className="w-6 h-6 text-rose-600 dark:text-rose-400" />
+  1278→  1278→                  </div>
+  1279→  1279→                  <div>
+  1280→  1280→                    <p className="text-2xl font-bold text-rose-700 dark:text-rose-400">{totalMinutesUsed.toFixed(1)}</p>
+  1281→  1281→                    <p className="text-xs text-gray-500 dark:text-gray-400">{t('totalMinutesUsed')}</p>
+  1282→  1282→                  </div>
+  1283→  1283→                </CardContent>
+  1284→  1284→              </Card>
+  1285→  1285→            </div>
+  1286→  1286→
+  1287→  1287→            {/* Desktop: Settings info bar */}
+  1288→  1288→            <div className="hidden md:flex bg-gradient-to-r from-cyan-50/80 to-emerald-50/80 dark:from-cyan-900/20 dark:to-emerald-900/20 border border-cyan-200 dark:border-cyan-800 rounded-xl p-3 items-center justify-between mb-4">
+  1289→  1289→              <div className="flex items-center gap-3">
+  1290→  1290→                <div className="w-9 h-9 rounded-lg bg-cyan-100 dark:bg-cyan-900/40 flex items-center justify-center">
+  1291→  1291→                  <Clock className="w-4 h-4 text-cyan-700 dark:text-cyan-400" />
+  1292→  1292→                </div>
+  1293→  1293→                <div>
+  1294→  1294→                  <p className="text-sm font-semibold text-cyan-800 dark:text-cyan-300">{t('freeLimitInfo')} {freeMin} {t('minutesPerWeek')}</p>
+  1295→  1295→                  <p className="text-xs text-cyan-600 dark:text-cyan-400">{t('extraPriceInfo')} {priceMin} {t('shekel')}</p>
+  1296→  1296→                </div>
+  1297→  1297→              </div>
+  1298→  1298→              <div className="flex items-center gap-4 text-xs">
+  1299→  1299→                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-400"></span><span className="text-gray-600 dark:text-gray-400">{t('free')}</span></div>
+  1300→  1300→                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-amber-400"></span><span className="text-gray-600 dark:text-gray-400">{t('paid')}</span></div>
+  1301→  1301→                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-rose-400"></span><span className="text-gray-600 dark:text-gray-400">{t('overLimitFamilies')} ({totalFamiliesOverLimit} {t('familiesOverLimitCount')})</span></div>
+  1302→  1302→              </div>
+  1303→  1303→            </div>
+  1304→  1304→          </div>
+  1305→  1305→
+  1306→  1306→          {/* Family Cards Grid */}
+  1307→  1307→          <main className="max-w-7xl mx-auto px-3 md:px-6 pb-6">
+  1308→  1308→            {loading ? (
+  1309→  1309→              <div className="flex flex-col items-center justify-center py-20 gap-4">
+  1310→  1310→                <div className="w-12 h-12 rounded-full border-4 border-cyan-200 dark:border-cyan-800 border-t-cyan-600 dark:border-t-cyan-400 animate-spin"></div>
+  1311→  1311→                <p className="text-gray-500 dark:text-gray-400">{t('loading')}</p>
+  1312→  1312→              </div>
+  1313→  1313→            ) : families.length === 0 ? (
+  1314→  1314→              <div className="flex flex-col items-center justify-center py-20 gap-4">
+  1315→  1315→                <div className="w-20 h-20 rounded-full bg-cyan-50 dark:bg-cyan-900/20 flex items-center justify-center"><Users className="w-10 h-10 text-cyan-300 dark:text-cyan-700" /></div>
+  1316→  1316→                <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-300">{t('noFamilies')}</h2>
+  1317→  1317→                <p className="text-gray-500 dark:text-gray-400 text-sm">{t('addFamilyStart')}</p>
+  1318→  1318→              </div>
+  1319→  1319→            ) : (
+  1320→  1320→              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+  1321→  1321→                {families.map((family) => {
+  1322→  1322→                  const isActive = !!family.activeSessionId
+  1323→  1323→                  const timerSeconds = timers[family.id] || 0
+  1324→  1324→                  const totalUsedMinutes = (family.weeklySeconds + timerSeconds) / 60
+  1325→  1325→                  const { paidMinutes, cost } = calculateCost(family)
+  1326→  1326→                  const usagePercent = getUsagePercentage(family)
+  1327→  1327→                  const overLimit = isOverFreeLimit(family)
+  1328→  1328→                  const freeRemaining = Math.max(0, freeMin - totalUsedMinutes)
+  1329→  1329→                  const isExpanded = expandedFamily === family.id
+  1330→  1330→
+  1331→  1331→                  return (
+  1332→  1332→                    <Card key={family.id} className={`overflow-hidden transition-all duration-300 border-2 ${isActive ? 'border-emerald-400 dark:border-emerald-600 shadow-lg shadow-emerald-100 dark:shadow-emerald-900/20 ring-1 ring-emerald-200 dark:ring-emerald-800' : overLimit ? 'border-amber-300 dark:border-amber-700 shadow-md shadow-amber-50 dark:shadow-amber-900/10' : 'border-gray-200 dark:border-gray-700 hover:border-cyan-300 dark:hover:border-cyan-700 hover:shadow-md hover:shadow-cyan-50 dark:hover:shadow-cyan-900/10'}`}>
+  1333→  1333→                      {isActive && <div className="h-1 bg-gradient-to-r from-cyan-500 to-emerald-500 animate-pulse" />}
+  1334→  1334→                      <CardHeader className="pb-2">
+  1335→  1335→                        <div className="flex items-center justify-between">
+  1336→  1336→                          <CardTitle className="text-sm md:text-base flex items-center gap-2">
+  1337→  1337→                            <div className={`w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center ${isActive ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400' : overLimit ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400' : 'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-600 dark:text-cyan-400'}`}>
+  1338→  1338→                              <Droplets className="w-3.5 h-3.5 md:w-4 md:h-4" />
+  1339→  1339→                            </div>
+  1340→  1340→                            <span className="truncate max-w-[100px] md:max-w-[160px] lg:max-w-[200px]">{family.name}</span>
+  1341→  1341→                          </CardTitle>
+  1342→  1342→                          <div className="flex items-center gap-1">
+  1343→  1343→                            {isActive && <Badge className="bg-emerald-500 text-white text-[9px] md:text-[10px] px-1.5 py-0"><span className={`w-1 h-1 rounded-full bg-white animate-pulse ${dir === 'rtl' ? 'ml-0.5' : 'mr-0.5'}`}></span>{t('active')}</Badge>}
+  1344→  1344→                            {overLimit && !isActive && <Badge variant="destructive" className="text-[9px] md:text-[10px] px-1.5 py-0">{t('overLimit')}</Badge>}
+  1345→  1345→                          </div>
+  1346→  1346→                        </div>
+  1347→  1347→                      </CardHeader>
+  1348→  1348→                      <CardContent className="space-y-3">
+  1349→  1349→                        <div className={`text-center py-3 md:py-4 rounded-xl ${isActive ? 'bg-gradient-to-br from-emerald-50 to-cyan-50 dark:from-emerald-900/20 dark:to-cyan-900/20 border border-emerald-200 dark:border-emerald-800' : 'bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700'}`}>
+  1350→  1350→                          <div className="text-3xl md:text-4xl font-mono font-bold tracking-wider">
+  1351→  1351→                            <span className={isActive ? 'text-emerald-700 dark:text-emerald-400' : 'text-gray-700 dark:text-gray-300'}>{formatTime(timerSeconds)}</span>
+  1352→  1352→                          </div>
+  1353→  1353→                          {isActive && <p className="text-[10px] md:text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">{t('filling')}</p>}
+  1354→  1354→                        </div>
+  1355→  1355→
+  1356→  1356→                        <div className="space-y-1">
+  1357→  1357→                          <div className="flex justify-between text-[10px] md:text-xs">
+  1358→  1358→                            <span className="text-gray-500 dark:text-gray-400">{t('freeUsage')}</span>
+  1359→  1359→                            <span className={`font-medium ${overLimit ? 'text-amber-600 dark:text-amber-400' : 'text-gray-700 dark:text-gray-300'}`}>
+  1360→  1360→                              {Math.min(totalUsedMinutes, freeMin).toFixed(1)}/{freeMin} {t('minShort')}
+  1361→  1361→                            </span>
+  1362→  1362→                          </div>
+  1363→  1363→                          <Progress value={usagePercent} className={`h-2 ${overLimit ? '[&>div]:bg-amber-500' : '[&>div]:bg-gradient-to-r [&>div]:from-cyan-500 [&>div]:to-emerald-500'}`} />
+  1364→  1364→                        </div>
+  1365→  1365→
+  1366→  1366→                        <div className="grid grid-cols-2 gap-1.5 md:gap-2">
+  1367→  1367→                          <div className="bg-white dark:bg-gray-800 rounded-lg p-2 border border-gray-100 dark:border-gray-700 text-center">
+  1368→  1368→                            <p className="text-[9px] md:text-[10px] text-gray-500 dark:text-gray-400">{t('freeRemaining')}</p>
+  1369→  1369→                            <p className={`text-xs md:text-sm font-bold ${freeRemaining > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+  1370→  1370→                              {freeRemaining > 0 ? `${freeRemaining.toFixed(1)} ${t('minShort')}` : t('exhausted')}
+  1371→  1371→                            </p>
+  1372→  1372→                          </div>
+  1373→  1373→                          <div className="bg-white dark:bg-gray-800 rounded-lg p-2 border border-gray-100 dark:border-gray-700 text-center">
+  1374→  1374→                            <p className="text-[9px] md:text-[10px] text-gray-500 dark:text-gray-400">{t('amountDue')}</p>
+  1375→  1375→                            <p className={`text-xs md:text-sm font-bold ${cost > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>{cost.toFixed(2)} {t('shekel')}</p>
+  1376→  1376→                          </div>
+  1377→  1377→                        </div>
+  1378→  1378→
+  1379→  1379→                        {paidMinutes > 0 && (
+  1380→  1380→                          <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-2 border border-amber-200 dark:border-amber-800 text-center">
+  1381→  1381→                            <p className="text-[10px] md:text-xs text-amber-700 dark:text-amber-400">
+  1382→  1382→                              <AlertCircle className={`w-2.5 h-2.5 inline ${dir === 'rtl' ? 'ml-0.5' : 'mr-0.5'}`} />
+  1383→  1383→                              {t('extraInfo')}: <span className="font-bold">{paidMinutes.toFixed(1)}</span> {t('minShort')} × {priceMin} {t('shekel')}
+  1384→  1384→                            </p>
+  1385→  1385→                          </div>
+  1386→  1386→                        )}
+  1387→  1387→
+  1388→  1388→                        <Separator />
+  1389→  1389→
+  1390→  1390→                        <div className="flex gap-1.5 md:gap-2">
+  1391→  1391→                          {isActive ? (
+  1392→  1392→                            <Button onClick={() => handleStopSession(family.id, family.activeSessionId!)} className="flex-1 gap-1.5 bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600 text-white shadow-sm text-xs h-8 md:h-9">
+  1393→  1393→                              <Pause className="w-3.5 h-3.5" />{t('stop')}
+  1394→  1394→                            </Button>
+  1395→  1395→                          ) : (
+  1396→  1396→                            <Button onClick={() => handleStartSession(family.id)} className="flex-1 gap-1.5 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white shadow-sm text-xs h-8 md:h-9">
+  1397→  1397→                              <Play className="w-3.5 h-3.5" />{t('start')}
+  1398→  1398→                            </Button>
+  1399→  1399→                          )}
+  1400→  1400→                          <Button variant="outline" size="sm" onClick={() => openEditFamily(family)} className="gap-1 border-cyan-300 dark:border-cyan-700 text-cyan-700 dark:text-cyan-400 hover:text-cyan-800 dark:hover:text-cyan-300 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 hover:border-cyan-400 dark:hover:border-cyan-600 bg-cyan-50/50 dark:bg-cyan-900/10 h-8 md:h-9" title={t('edit')}>
+  1401→  1401→                            <Pencil className="w-3.5 h-3.5" />
+  1402→  1402→                          </Button>
+  1403→  1403→                          <Button variant="outline" size="sm" onClick={() => resetWeekly(family.id, family.name)} className="gap-1 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:border-amber-400 dark:hover:border-amber-600 bg-amber-50/50 dark:bg-amber-900/10 h-8 md:h-9" title={t('resetUsage')}>
+  1404→  1404→                            <RotateCcw className="w-3.5 h-3.5" />
+  1405→  1405→                          </Button>
+  1406→  1406→                          <Button variant="outline" size="sm" onClick={() => deleteFamily(family.id, family.name)} className="gap-1 border-red-300 dark:border-red-700 text-red-700 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-400 dark:hover:border-red-600 bg-red-50/50 dark:bg-red-900/10 h-8 md:h-9" title={t('delete')}>
+  1407→  1407→                            <Trash2 className="w-3.5 h-3.5" />
+  1408→  1408→                          </Button>
+  1409→  1409→                        </div>
+  1410→  1410→
+  1411→  1411→                        {/* Expandable session history */}
+  1412→  1412→                        {family.sessions && family.sessions.filter((s) => s.endTime).length > 0 && (
+  1413→  1413→                          <div>
+  1414→  1414→                            <button
+  1415→  1415→                              onClick={() => setExpandedFamily(isExpanded ? null : family.id)}
+  1416→  1416→                              className="w-full flex items-center justify-center gap-1 text-[10px] md:text-xs text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 py-1 transition-colors"
+  1417→  1417→                            >
+  1418→  1418→                              <History className="w-3 h-3" />
+  1419→  1419→                              {isExpanded ? t('hideLog') : `${t('showLog')} (${family.sessions.filter((s) => s.endTime).length})`}
+  1420→  1420→                              {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+  1421→  1421→                            </button>
+  1422→  1422→                            {isExpanded && (
+  1423→  1423→                              <div className="mt-2 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+  1424→  1424→                                <div className="overflow-x-auto max-h-40 overflow-y-auto">
+  1425→  1425→                                  <table className="w-full text-xs">
+  1426→  1426→                                    <thead>
+  1427→  1427→                                      <tr className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+  1428→  1428→                                        <th className={`px-2 py-1.5 font-medium text-gray-600 dark:text-gray-400 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{t('from')}</th>
+  1429→  1429→                                        <th className={`px-2 py-1.5 font-medium text-gray-600 dark:text-gray-400 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{t('to')}</th>
+  1430→  1430→                                        <th className={`px-2 py-1.5 font-medium text-gray-600 dark:text-gray-400 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{t('duration')}</th>
+  1431→  1431→                                      </tr>
+  1432→  1432→                                    </thead>
+  1433→  1433→                                    <tbody>
+  1434→  1434→                                      {family.sessions
+  1435→  1435→                                        .filter((s) => s.endTime)
+  1436→  1436→                                        .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
+  1437→  1437→                                        .slice(0, 5)
+  1438→  1438→                                        .map((session) => (
+  1439→  1439→                                          <tr key={session.id} className="border-b border-gray-100 dark:border-gray-800 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-800">
+  1440→  1440→                                            <td className="px-2 py-1.5 text-gray-700 dark:text-gray-300 font-mono whitespace-nowrap">{formatTimeOfDay(session.startTime)}</td>
+  1441→  1441→                                            <td className="px-2 py-1.5 text-gray-700 dark:text-gray-300 font-mono whitespace-nowrap">{session.endTime ? formatTimeOfDay(session.endTime) : '-'}</td>
+  1442→  1442→                                            <td className="px-2 py-1.5 font-mono font-medium text-gray-700 dark:text-gray-300">{formatTime(session.duration)}</td>
+  1443→  1443→                                          </tr>
+  1444→  1444→                                        ))}
+  1445→  1445→                                    </tbody>
+  1446→  1446→                                  </table>
+  1447→  1447→                                </div>
+  1448→  1448→                              </div>
+  1449→  1449→                            )}
+  1450→  1450→                          </div>
+  1451→  1451→                        )}
+  1452→  1452→                      </CardContent>
+  1453→  1453→                    </Card>
+  1454→  1454→                  )
+  1455→  1455→                })}
+  1456→  1456→              </div>
+  1457→  1457→            )}
+  1458→  1458→          </main>
+  1459→  1459→        </>
+  1460→  1460→      )}
+  1461→  1461→
+  1462→  1462→      {/* ====== LOG VIEW ====== */}
+  1463→  1463→      {currentView === 'log' && (
+  1464→  1464→        <main className="max-w-7xl mx-auto px-3 md:px-6 py-3 md:py-4">
+  1465→  1465→          {/* Mobile: 2x2 Stats grid */}
+  1466→  1466→          <div className="grid grid-cols-2 gap-2 mb-4 md:hidden">
+  1467→  1467→            <Card className="border-cyan-200 dark:border-cyan-800 bg-gradient-to-br from-cyan-50 to-white dark:from-cyan-900/20 dark:to-gray-900">
+  1468→  1468→              <CardContent className="p-3 text-center">
+  1469→  1469→                <Users className="w-5 h-5 text-cyan-600 dark:text-cyan-400 mx-auto mb-0.5" />
+  1470→  1470→                <p className="text-xl font-bold text-cyan-700 dark:text-cyan-400">{families.length}</p>
+  1471→  1471→                <p className="text-[10px] text-gray-500 dark:text-gray-400">{t('numberOfFamilies')}</p>
+  1472→  1472→              </CardContent>
+  1473→  1473→            </Card>
+  1474→  1474→            <Card className="border-emerald-200 dark:border-emerald-800 bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-900/20 dark:to-gray-900">
+  1475→  1475→              <CardContent className="p-3 text-center">
+  1476→  1476→                <Timer className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mx-auto mb-0.5" />
+  1477→  1477→                <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400">{totalMinutesUsed.toFixed(1)}</p>
+  1478→  1478→                <p className="text-[10px] text-gray-500 dark:text-gray-400">{t('totalMinutes')}</p>
+  1479→  1479→              </CardContent>
+  1480→  1480→            </Card>
+  1481→  1481→            <Card className="border-amber-200 dark:border-amber-800 bg-gradient-to-br from-amber-50 to-white dark:from-amber-900/20 dark:to-gray-900">
+  1482→  1482→              <CardContent className="p-3 text-center">
+  1483→  1483→                <Coins className="w-5 h-5 text-amber-600 dark:text-amber-400 mx-auto mb-0.5" />
+  1484→  1484→                <p className="text-xl font-bold text-amber-700 dark:text-amber-400">{totalRevenue.toFixed(2)}</p>
+  1485→  1485→                <p className="text-[10px] text-gray-500 dark:text-gray-400">{t('totalAmountShekel')}</p>
+  1486→  1486→              </CardContent>
+  1487→  1487→            </Card>
+  1488→  1488→            <Card className="border-rose-200 dark:border-rose-800 bg-gradient-to-br from-rose-50 to-white dark:from-rose-900/20 dark:to-gray-900">
+  1489→  1489→              <CardContent className="p-3 text-center">
+  1490→  1490→                <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400 mx-auto mb-0.5" />
+  1491→  1491→                <p className="text-xl font-bold text-rose-700 dark:text-rose-400">{totalFamiliesOverLimit}</p>
+  1492→  1492→                <p className="text-[10px] text-gray-500 dark:text-gray-400">{t('familiesOverLimit')}</p>
+  1493→  1493→              </CardContent>
+  1494→  1494→            </Card>
+  1495→  1495→          </div>
+  1496→  1496→
+  1497→  1497→          {/* Desktop: Stats bar inline */}
+  1498→  1498→          <div className="hidden md:grid grid-cols-4 gap-4 mb-4">
+  1499→  1499→            <Card className="border-cyan-200 dark:border-cyan-800 bg-gradient-to-br from-cyan-50 to-white dark:from-cyan-900/20 dark:to-gray-900 shadow-sm">
+  1500→  1500→              <CardContent className="p-4 flex items-center gap-3">
+  1501→  1501→                <div className="w-10 h-10 rounded-xl bg-cyan-100 dark:bg-cyan-900/40 flex items-center justify-center"><Users className="w-5 h-5 text-cyan-600 dark:text-cyan-400" /></div>
+  1502→  1502→                <div><p className="text-xl font-bold text-cyan-700 dark:text-cyan-400">{families.length}</p><p className="text-xs text-gray-500 dark:text-gray-400">{t('numberOfFamilies')}</p></div>
+  1503→  1503→              </CardContent>
+  1504→  1504→            </Card>
+  1505→  1505→            <Card className="border-emerald-200 dark:border-emerald-800 bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-900/20 dark:to-gray-900 shadow-sm">
+  1506→  1506→              <CardContent className="p-4 flex items-center gap-3">
+  1507→  1507→                <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center"><Timer className="w-5 h-5 text-emerald-600 dark:text-emerald-400" /></div>
+  1508→  1508→                <div><p className="text-xl font-bold text-emerald-700 dark:text-emerald-400">{totalMinutesUsed.toFixed(1)}</p><p className="text-xs text-gray-500 dark:text-gray-400">{t('totalMinutes')}</p></div>
+  1509→  1509→              </CardContent>
+  1510→  1510→            </Card>
+  1511→  1511→            <Card className="border-amber-200 dark:border-amber-800 bg-gradient-to-br from-amber-50 to-white dark:from-amber-900/20 dark:to-gray-900 shadow-sm">
+  1512→  1512→              <CardContent className="p-4 flex items-center gap-3">
+  1513→  1513→                <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center"><Coins className="w-5 h-5 text-amber-600 dark:text-amber-400" /></div>
+  1514→  1514→                <div><p className="text-xl font-bold text-amber-700 dark:text-amber-400">{totalRevenue.toFixed(2)}</p><p className="text-xs text-gray-500 dark:text-gray-400">{t('totalAmountShekel')}</p></div>
+  1515→  1515→              </CardContent>
+  1516→  1516→            </Card>
+  1517→  1517→            <Card className="border-rose-200 dark:border-rose-800 bg-gradient-to-br from-rose-50 to-white dark:from-rose-900/20 dark:to-gray-900 shadow-sm">
+  1518→  1518→              <CardContent className="p-4 flex items-center gap-3">
+  1519→  1519→                <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-900/40 flex items-center justify-center"><AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400" /></div>
+  1520→  1520→                <div><p className="text-xl font-bold text-rose-700 dark:text-rose-400">{totalFamiliesOverLimit}</p><p className="text-xs text-gray-500 dark:text-gray-400">{t('familiesOverLimit')}</p></div>
+  1521→  1521→              </CardContent>
+  1522→  1522→            </Card>
+  1523→  1523→          </div>
+  1524→  1524→
+  1525→  1525→          {/* Search & Filter */}
+  1526→  1526→          <Card className="mb-4 border-gray-200 dark:border-gray-700">
+  1527→  1527→            <CardContent className="p-3">
+  1528→  1528→              <div className="flex flex-wrap items-center gap-2">
+  1529→  1529→                <div className="relative flex-1 min-w-[150px]">
+  1530→  1530→                  <Search className={`absolute ${dir === 'rtl' ? 'right-2.5' : 'left-2.5'} top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400`} />
+  1531→  1531→                  <Input placeholder={t('search')} value={logSearch} onChange={(e) => setLogSearch(e.target.value)} className={`${dir === 'rtl' ? 'pr-8' : 'pl-8'} ${dir === 'rtl' ? 'text-right' : 'text-left'} text-xs h-8`} />
+  1532→  1532→                </div>
+  1533→  1533→                <div className="flex items-center gap-1 flex-wrap">
+  1534→  1534→                  <Button variant={selectedLogFamily === null ? 'default' : 'outline'} size="sm" onClick={() => setSelectedLogFamily(null)} className={`text-[10px] h-7 ${selectedLogFamily === null ? 'bg-cyan-600 text-white' : ''}`}>{t('all')}</Button>
+  1535→  1535→                  {families.map((f) => (
+  1536→  1536→                    <Button key={f.id} variant={selectedLogFamily === f.id ? 'default' : 'outline'} size="sm" onClick={() => setSelectedLogFamily(f.id)} className={`text-[10px] h-7 ${selectedLogFamily === f.id ? 'bg-cyan-600 text-white' : ''}`}>{f.name}</Button>
+  1537→  1537→                  ))}
+  1538→  1538→                </div>
+  1539→  1539→              </div>
+  1540→  1540→            </CardContent>
+  1541→  1541→          </Card>
+  1542→  1542→
+  1543→  1543→          {/* Log entries */}
+  1544→  1544→          <div className="space-y-3 md:space-y-4 mb-4">
+  1545→  1545→            {families.filter((f) => !selectedLogFamily || f.id === selectedLogFamily).filter((f) => !logSearch || f.name.includes(logSearch)).map((family) => {
+  1546→  1546→              const { totalMinutes, freeMinutes: freeMinutesVal, paidMinutes: paidMinutesVal, cost } = calculateCost(family)
+  1547→  1547→              const familySessions = family.sessions?.filter((s) => s.endTime) || []
+  1548→  1548→              const overLimit = isOverFreeLimit(family)
+  1549→  1549→              const isActive = !!family.activeSessionId
+  1550→  1550→
+  1551→  1551→              return (
+  1552→  1552→                <Card key={family.id} className={`overflow-hidden ${overLimit ? 'border-amber-300 dark:border-amber-700' : 'border-gray-200 dark:border-gray-700'} hover:shadow-md transition-shadow`}>
+  1553→  1553→                  <CardHeader className={`pb-2 bg-gradient-to-l ${dir === 'rtl' ? 'from-gray-50 to-white dark:from-gray-800 dark:to-gray-900' : 'from-white to-gray-50 dark:from-gray-900 dark:to-gray-800'}`}>
+  1554→  1554→                    <div className="flex items-center justify-between flex-wrap gap-2">
+  1555→  1555→                      <div className="flex items-center gap-2">
+  1556→  1556→                        <div className={`w-8 h-8 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${overLimit ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400' : 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400'}`}>
+  1557→  1557→                          <Droplets className="w-4 h-4 md:w-5 md:h-5" />
+  1558→  1558→                        </div>
+  1559→  1559→                        <div>
+  1560→  1560→                          <CardTitle className="text-sm md:text-base">{family.name}</CardTitle>
+  1561→  1561→                          <p className="text-[10px] md:text-xs text-gray-500 dark:text-gray-400">
+  1562→  1562→                            <CalendarDays className={`w-2.5 h-2.5 inline ${dir === 'rtl' ? 'ml-0.5' : 'mr-0.5'}`} />
+  1563→  1563→                            {formatDate(family.createdAt)}
+  1564→  1564→                          </p>
+  1565→  1565→                        </div>
+  1566→  1566→                      </div>
+  1567→  1567→                      <div className="flex items-center gap-1.5">
+  1568→  1568→                        <Button variant="outline" size="sm" onClick={() => openEditFamily(family)} className="gap-1 border-cyan-300 dark:border-cyan-700 text-cyan-700 dark:text-cyan-400 hover:text-cyan-800 dark:hover:text-cyan-300 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 hover:border-cyan-400 dark:hover:border-cyan-600 bg-cyan-50/50 dark:bg-cyan-900/10 font-semibold h-7 text-[10px]">
+  1569→  1569→                          <Pencil className="w-3 h-3" />
+  1570→  1570→                          <span className="hidden sm:inline">{t('edit')}</span>
+  1571→  1571→                        </Button>
+  1572→  1572→                        {isActive && <Badge className="bg-emerald-500 text-white text-[9px] gap-0.5"><span className="w-1 h-1 rounded-full bg-white animate-pulse"></span>{t('fillingInProgress')}</Badge>}
+  1573→  1573→                        {overLimit ? <Badge variant="destructive" className="text-[9px]">{t('overLimit')}</Badge> : <Badge className="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 text-[9px] hover:bg-emerald-100 dark:hover:bg-emerald-900/40">{t('withinLimit')}</Badge>}
+  1574→  1574→                      </div>
+  1575→  1575→                    </div>
+  1576→  1576→                  </CardHeader>
+  1577→  1577→                  <CardContent className="space-y-3">
+  1578→  1578→                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+  1579→  1579→                      <div className="bg-cyan-50 dark:bg-cyan-900/20 rounded-lg p-2 text-center border border-cyan-100 dark:border-cyan-800"><p className="text-[9px] md:text-[10px] text-cyan-600 dark:text-cyan-400">{t('total')}</p><p className="text-sm font-bold text-cyan-700 dark:text-cyan-400">{totalMinutes.toFixed(1)}</p></div>
+  1580→  1580→                      <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-2 text-center border border-emerald-100 dark:border-emerald-800"><p className="text-[9px] md:text-[10px] text-emerald-600 dark:text-emerald-400">{t('free')}</p><p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">{freeMinutesVal.toFixed(1)}</p></div>
+  1581→  1581→                      <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-2 text-center border border-amber-100 dark:border-amber-800"><p className="text-[9px] md:text-[10px] text-amber-600 dark:text-amber-400">{t('paid')}</p><p className="text-sm font-bold text-amber-700 dark:text-amber-400">{paidMinutesVal.toFixed(1)}</p></div>
+  1582→  1582→                      <div className="bg-rose-50 dark:bg-rose-900/20 rounded-lg p-2 text-center border border-rose-100 dark:border-rose-800"><p className="text-[9px] md:text-[10px] text-rose-600 dark:text-rose-400">{t('cost')}</p><p className="text-sm font-bold text-rose-700 dark:text-rose-400">{cost.toFixed(2)}</p></div>
+  1583→  1583→                      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-2 text-center border border-gray-200 dark:border-gray-700 col-span-2 md:col-span-1"><p className="text-[9px] md:text-[10px] text-gray-500 dark:text-gray-400">{t('sessions')}</p><p className="text-sm font-bold text-gray-700 dark:text-gray-300">{familySessions.length}</p></div>
+  1584→  1584→                    </div>
+  1585→  1585→
+  1586→  1586→                    <div className="space-y-1">
+  1587→  1587→                      <div className="flex justify-between text-[10px] md:text-xs">
+  1588→  1588→                        <span className="text-gray-500 dark:text-gray-400">{t('freeLimitUsage')}</span>
+  1589→  1589→                        <span className={`font-medium ${overLimit ? 'text-amber-600 dark:text-amber-400' : 'text-gray-700 dark:text-gray-300'}`}>{Math.min(totalMinutes, freeMin).toFixed(1)}/{freeMin} {t('minShort')}</span>
+  1590→  1590→                      </div>
+  1591→  1591→                      <Progress value={getUsagePercentage(family)} className={`h-2 ${overLimit ? '[&>div]:bg-amber-500' : '[&>div]:bg-gradient-to-r [&>div]:from-cyan-500 [&>div]:to-emerald-500'}`} />
+  1592→  1592→                    </div>
+  1593→  1593→
+  1594→  1594→                    {familySessions.length > 0 && (
+  1595→  1595→                      <div>
+  1596→  1596→                        <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5 flex items-center gap-1">
+  1597→  1597→                          <History className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />{t('fillingLogTitle')}
+  1598→  1598→                        </h4>
+  1599→  1599→                        {/* Mobile: Card list */}
+  1600→  1600→                        <div className="md:hidden space-y-2">
+  1601→  1601→                          {familySessions
+  1602→  1602→                            .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
+  1603→  1603→                            .map((session, idx) => {
+  1604→  1604→                              const sessionMinutes = session.duration / 60
+  1605→  1605→                              const sessionsBefore = familySessions.filter((s) => new Date(s.startTime).getTime() > new Date(session.startTime).getTime()).reduce((acc, s) => acc + s.duration / 60, 0)
+  1606→  1606→                              const freeRemainingBefore = Math.max(0, freeMin - Math.min(sessionsBefore, freeMin))
+  1607→  1607→                              const paidInSession = Math.max(0, sessionMinutes - freeRemainingBefore)
+  1608→  1608→                              const sessionCost = paidInSession * priceMin
+  1609→  1609→
+  1610→  1610→                              return (
+  1611→  1611→                                <div key={session.id} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-2.5 border border-gray-200 dark:border-gray-700">
+  1612→  1612→                                  <div className="flex items-center justify-between mb-1">
+  1613→  1613→                                    <span className="text-[10px] text-gray-500 dark:text-gray-400">{t('sessionNum')} #{idx + 1}</span>
+  1614→  1614→                                    {sessionCost > 0 ? <Badge variant="destructive" className="text-[9px]">{sessionCost.toFixed(2)} {t('shekel')}</Badge> : <Badge className="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 text-[9px] hover:bg-emerald-100 dark:hover:bg-emerald-900/40">{t('free')}</Badge>}
+  1615→  1615→                                  </div>
+  1616→  1616→                                  <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-400">
+  1617→  1617→                                    <span className="font-mono">{formatTimeOfDay(session.startTime)}</span>
+  1618→  1618→                                    <span>→</span>
+  1619→  1619→                                    <span className="font-mono">{session.endTime ? formatTimeOfDay(session.endTime) : '-'}</span>
+  1620→  1620→                                    <span className="font-mono font-medium">{formatTime(session.duration)}</span>
+  1621→  1621→                                  </div>
+  1622→  1622→                                </div>
+  1623→  1623→                              )
+  1624→  1624→                            })}
+  1625→  1625→                        </div>
+  1626→  1626→                        {/* Desktop: Table view */}
+  1627→  1627→                        <div className="hidden md:block rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+  1628→  1628→                          <div className="overflow-x-auto">
+  1629→  1629→                            <table className="w-full text-xs">
+  1630→  1630→                              <thead>
+  1631→  1631→                                <tr className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+  1632→  1632→                                  <th className={`px-3 py-2 font-medium text-gray-600 dark:text-gray-400 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>#</th>
+  1633→  1633→                                  <th className={`px-3 py-2 font-medium text-gray-600 dark:text-gray-400 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{t('date')}</th>
+  1634→  1634→                                  <th className={`px-3 py-2 font-medium text-gray-600 dark:text-gray-400 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{t('from')}</th>
+  1635→  1635→                                  <th className={`px-3 py-2 font-medium text-gray-600 dark:text-gray-400 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{t('to')}</th>
+  1636→  1636→                                  <th className={`px-3 py-2 font-medium text-gray-600 dark:text-gray-400 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{t('duration')}</th>
+  1637→  1637→                                  <th className={`px-3 py-2 font-medium text-gray-600 dark:text-gray-400 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}>{t('costColumn')}</th>
+  1638→  1638→                                </tr>
+  1639→  1639→                              </thead>
+  1640→  1640→                              <tbody>
+  1641→  1641→                                {familySessions.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()).map((session, idx) => {
+  1642→  1642→                                  const sessionMinutes = session.duration / 60
+  1643→  1643→                                  const sessionsBefore = familySessions.filter((s) => new Date(s.startTime).getTime() > new Date(session.startTime).getTime()).reduce((acc, s) => acc + s.duration / 60, 0)
+  1644→  1644→                                  const freeRemainingBefore = Math.max(0, freeMin - Math.min(sessionsBefore, freeMin))
+  1645→  1645→                                  const paidInSession = Math.max(0, sessionMinutes - freeRemainingBefore)
+  1646→  1646→                                  const sessionCost = paidInSession * priceMin
+  1647→  1647→
+  1648→  1648→                                  return (
+  1649→  1649→                                    <tr key={session.id} className="border-b border-gray-100 dark:border-gray-800 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+  1650→  1650→                                      <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{idx + 1}</td>
+  1651→  1651→                                      <td className="px-3 py-2 text-gray-700 dark:text-gray-300 whitespace-nowrap">{formatDate(session.startTime)}</td>
+  1652→  1652→                                      <td className="px-3 py-2 text-gray-700 dark:text-gray-300 font-mono">{formatTimeOfDay(session.startTime)}</td>
+  1653→  1653→                                      <td className="px-3 py-2 text-gray-700 dark:text-gray-300 font-mono">{session.endTime ? formatTimeOfDay(session.endTime) : '-'}</td>
+  1654→  1654→                                      <td className="px-3 py-2">
+  1655→  1655→                                        <span className="font-mono font-medium text-gray-700 dark:text-gray-300">{formatTime(session.duration)}</span>
+  1656→  1656→                                        <span className={`text-gray-400 dark:text-gray-500 ${dir === 'rtl' ? 'mr-0.5' : 'ml-0.5'}`}>({sessionMinutes.toFixed(1)}{t('minShort')})</span>
+  1657→  1657→                                      </td>
+  1658→  1658→                                      <td className="px-3 py-2">
+  1659→  1659→                                        {sessionCost > 0 ? <Badge variant="destructive" className="text-[9px]">{sessionCost.toFixed(2)}</Badge> : <Badge className="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 text-[9px] hover:bg-emerald-100 dark:hover:bg-emerald-900/40">{t('free')}</Badge>}
+  1660→  1660→                                      </td>
+  1661→  1661→                                    </tr>
+  1662→  1662→                                  )
+  1663→  1663→                                })}
+  1664→  1664→                              </tbody>
+  1665→  1665→                            </table>
+  1666→  1666→                          </div>
+  1667→  1667→                        </div>
+  1668→  1668→                      </div>
+  1669→  1669→                    )}
+  1670→  1670→                  </CardContent>
+  1671→  1671→                </Card>
+  1672→  1672→              )
+  1673→  1673→            })}
+  1674→  1674→          </div>
+  1675→  1675→
+  1676→  1676→          <footer className="mt-6 pb-4">
+  1677→  1677→            <div className="text-center text-[10px] md:text-xs text-gray-400 dark:text-gray-500">{t('fillingLogFooter')}</div>
+  1678→  1678→          </footer>
+  1679→  1679→        </main>
+  1680→  1680→      )}
+  1681→  1681→    </div>
+  1682→  1682→  )
+  1683→  1683→}
+  1684→  1684→
+  1685→  1685→interface BeforeInstallPromptEvent extends Event {
+  1686→  1686→  prompt(): Promise<void>
+  1687→  1687→  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
+  1688→  1688→}
+  1689→  1689→

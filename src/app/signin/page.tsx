@@ -63,6 +63,8 @@ export default function SignInPage() {
             return
           }
           if (result.requiresVerification) {
+            // Store credentials temporarily for auto-login after verification
+            sessionStorage.setItem('pending_verification', JSON.stringify({ email, password }))
             router.push(`/verify-email?email=${encodeURIComponent(email)}`)
             return
           }
@@ -101,6 +103,8 @@ export default function SignInPage() {
 
         // New registration - redirect to verification page
         if (data.requiresVerification) {
+          // Store credentials temporarily for auto-login after verification
+          sessionStorage.setItem('pending_verification', JSON.stringify({ email, password }))
           router.push(`/verify-email?email=${encodeURIComponent(email)}`)
           return
         }

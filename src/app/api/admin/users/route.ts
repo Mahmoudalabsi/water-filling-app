@@ -27,14 +27,18 @@ export async function GET() {
     return NextResponse.json({
       status: 'ok',
       count: users.length,
-      users: users.map(u => ({
-        id: u.id,
-        name: u.name,
-        email: u.email,
-        emailVerified: u.emailVerified,
-        createdAt: u.createdAt,
-        hasGmailSettings: !!(u.settings?.[0]?.gmailUser && u.settings?.[0]?.gmailAppPassword),
-      }))
+      users: users.map(u => {
+        // settings is a one-to-many array but with unique userId, so it's 0 or 1 items
+        const userSettings = Array.isArray(u.settings) ? u.settings[0] : u.settings
+        return {
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          emailVerified: u.emailVerified,
+          createdAt: u.createdAt,
+          hasGmailSettings: !!(userSettings?.gmailUser && userSettings?.gmailAppPassword),
+        }
+      })
     })
   } catch (error: any) {
     console.error('Error listing users:', error)
