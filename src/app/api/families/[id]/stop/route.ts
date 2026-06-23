@@ -1,14 +1,14 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getCurrentUser } from '@/lib/auth'
 
 // POST /api/families/[id]/stop - stop active session
 export async function POST(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentUser(request)
     if (!user?.id) {
       return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
     }

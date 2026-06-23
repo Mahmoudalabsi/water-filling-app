@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getCurrentUser } from '@/lib/auth'
 
@@ -11,9 +11,9 @@ const DEFAULT_SETTINGS = {
 }
 
 // GET /api/settings - get settings for current user
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentUser(request)
     if (!user?.id) {
       return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
     }
@@ -36,9 +36,9 @@ export async function GET() {
 }
 
 // PUT /api/settings - update settings for current user
-export async function PUT(request: Request) {
+export async function PUT(request: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentUser(request)
     if (!user?.id) {
       return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
     }

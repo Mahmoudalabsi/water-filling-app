@@ -4,6 +4,7 @@ import GoogleProvider from 'next-auth/providers/google'
 import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
 import { getServerSession } from 'next-auth'
+import { getUserIdFromToken } from '@/lib/api-auth'
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -185,7 +186,34 @@ export const authOptions: NextAuthOptions = {
   },
 }
 
-export async function getCurrentUser() {
+/**
+ * Get the current authenticated user.
+ * Checks NextAuth session cookies first, then falls back to Bearer token.
+ * This dual approach ensures authentication works in both:
+ * - Browser (NextAuth cookies)
+ * - Mobile app / Capacitor (Bearer JWT token)
+ */
+export async function getCurrentUser(request?: Request | import('next/server').NextRequest) {
+  // First try: NextAuth session (cookie-based, works in browser)
   const session = await getServerSession(authOptions)
-  return session?.user as (typeof session.user & { id: string }) | undefined
+  if (session?.user) {
+    return session.user as (typeof session.user & { id: string }) | undefined
+  }
+
+  // Second try: Bearer token (works in mobile app / Capacitor)
+  if (request) {
+    const userId = getUserIdFromToken(request)
+    if (userId) {
+      // Verify user still exists in database
+      const user = await db.user.findUnique({
+        where: { id: userId },
+        select: { id: true, email: true, name: true, image: true },
+      })
+      if (user) {
+        return user as any
+      }
+    }
+  }
+
+  return undefined
 }

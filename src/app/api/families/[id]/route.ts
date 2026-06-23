@@ -1,14 +1,14 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getCurrentUser } from '@/lib/auth'
 
 // PUT /api/families/[id] - update family name
 export async function PUT(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentUser(request)
     if (!user?.id) {
       return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
     }
@@ -42,11 +42,11 @@ export async function PUT(
 
 // DELETE /api/families/[id] - delete a family
 export async function DELETE(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentUser(request)
     if (!user?.id) {
       return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
     }

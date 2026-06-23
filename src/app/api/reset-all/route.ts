@@ -1,11 +1,11 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getCurrentUser } from '@/lib/auth'
 
 // POST /api/reset-all - reset all weekly usage for current user
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentUser(request)
     if (!user?.id) {
       return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
     }

@@ -1,7 +1,7 @@
 // Offline-first database using IndexedDB for caching API data
 // Enhanced with family caching, session store, settings cache, and proper sync handling
 
-import { apiUrl } from './api-config'
+import { apiUrl, getApiToken } from './api-config'
 
 const DB_NAME = 'water-filling-offline'
 const DB_VERSION = 2
@@ -140,6 +140,37 @@ export async function clearCachedSession(): Promise<void> {
   })
 }
 
+// ====== API Token Caching (JWT Bearer Token) ======
+
+export async function cacheApiToken(token: string): Promise<void> {
+  return cacheData(STORES.session, { key: 'api-token', data: { token }, timestamp: Date.now() })
+}
+
+export async function getCachedApiToken(): Promise<string | null> {
+  try {
+    const item = await getCachedItem(STORES.session, 'api-token')
+    if (!item) return null
+    // Token cache is valid for 30 days (matches JWT expiry)
+    if (Date.now() - item.timestamp > 30 * 24 * 60 * 60 * 1000) {
+      return null
+    }
+    return item.data.token || null
+  } catch {
+    return null
+  }
+}
+
+export async function clearCachedApiToken(): Promise<void> {
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORES.session, 'readwrite')
+    const store = tx.objectStore(STORES.session)
+    store.delete('api-token')
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
 // ====== Pending Operations ======
 
 export async function addPendingOperation(operation: {
@@ -229,6 +260,7 @@ export async function syncPendingOperations(): Promise<{ synced: number; failed:
   const operations = await getPendingOperations()
   let synced = 0
   let failed = 0
+  const token = getApiToken() // Get JWT token for authenticated sync
 
   for (const op of operations) {
     try {
@@ -238,7 +270,11 @@ export async function syncPendingOperations(): Promise<{ synced: number; failed:
 
       const res = await fetch(resolvedUrl, {
         method: op.method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          // Include Bearer token for authentication
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
         body: resolvedBody ? JSON.stringify(resolvedBody) : undefined,
       })
 

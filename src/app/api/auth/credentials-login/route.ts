@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
+import { generateApiToken } from '@/lib/api-auth'
 
 /**
- * Direct credentials login endpoint for mobile app (Capacitor)
- * Returns user data without relying on NextAuth cookies
+ * Direct credentials login endpoint for mobile app (Capacitor) and browser
+ * Returns user data + JWT token for API authentication
  * This is used when NextAuth's cookie-based session doesn't work in WebView
  */
 export async function POST(request: NextRequest) {
@@ -57,7 +58,14 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Return user data (without sensitive info)
+    // Generate JWT token for API authentication
+    const token = generateApiToken({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+    })
+
+    // Return user data + JWT token
     return NextResponse.json({
       user: {
         id: user.id,
@@ -65,6 +73,7 @@ export async function POST(request: NextRequest) {
         email: user.email,
         image: user.image,
       },
+      token, // JWT token for API calls
     })
   } catch (error) {
     console.error('Credentials login error:', error)

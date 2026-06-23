@@ -15,7 +15,7 @@ import { useLanguage } from '@/components/language-provider'
 import { ThemeLanguageToggle } from '@/components/theme-language-toggle'
 import { getDayNames } from '@/lib/i18n'
 import { useOffline } from '@/hooks/use-offline'
-import { apiUrl, isCapacitorApp } from '@/lib/api-config'
+import { apiUrl, isCapacitorApp, authFetch } from '@/lib/api-config'
 import { cacheFamilies, getCachedFamilies, cacheSettings, getCachedSettings, addPendingOperation, refreshPendingCount as refreshOfflinePendingCount } from '@/lib/offline-db'
 import { useLocalAuth } from '@/components/auth-provider'
 import {
@@ -243,8 +243,8 @@ export default function Home() {
   const refreshFamilies = useCallback(async () => {
     try {
       const [familiesRes, settingsRes] = await Promise.all([
-        fetch(apiUrl('/api/families')),
-        fetch(apiUrl('/api/settings')),
+        authFetch(apiUrl('/api/families')),
+        authFetch(apiUrl('/api/settings')),
       ])
 
       if (!familiesRes.ok || !settingsRes.ok) throw new Error('API error')
@@ -371,7 +371,7 @@ export default function Home() {
     }
 
     try {
-      const res = await fetch(apiUrl('/api/families'), {
+      const res = await authFetch(apiUrl('/api/families'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: familyNameCopy }),
@@ -407,7 +407,7 @@ export default function Home() {
           return
         }
         try {
-          const res = await fetch(apiUrl(`/api/families/${id}`), { method: 'DELETE' })
+          const res = await authFetch(apiUrl(`/api/families/${id}`), { method: 'DELETE' })
           if (!res.ok) throw new Error()
           stopTimerInterval(id)
           setTimers((prev) => { const n = { ...prev }; delete n[id]; return n })
@@ -450,7 +450,7 @@ export default function Home() {
     }
 
     try {
-      const res = await fetch(apiUrl(`/api/families/${editId}`), {
+      const res = await authFetch(apiUrl(`/api/families/${editId}`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: editName }),
@@ -487,7 +487,7 @@ export default function Home() {
     }
 
     try {
-      const res = await fetch(apiUrl(`/api/families/${familyId}/start`), { method: 'POST' })
+      const res = await authFetch(apiUrl(`/api/families/${familyId}/start`), { method: 'POST' })
       const data = await res.json()
       if (!res.ok) {
         showToast('error', data.error || t('sessionStartError'))
@@ -525,7 +525,7 @@ export default function Home() {
     }
 
     try {
-      const res = await fetch(apiUrl(`/api/families/${familyId}/stop`), {
+      const res = await authFetch(apiUrl(`/api/families/${familyId}/stop`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, duration: elapsed }),
@@ -561,7 +561,7 @@ export default function Home() {
           return
         }
         try {
-          const res = await fetch(apiUrl(`/api/families/${familyId}/reset`), { method: 'POST' })
+          const res = await authFetch(apiUrl(`/api/families/${familyId}/reset`), { method: 'POST' })
           if (!res.ok) throw new Error()
           stopTimerInterval(familyId)
           setTimers((prev) => { const n = { ...prev }; delete n[familyId]; return n })
@@ -597,7 +597,7 @@ export default function Home() {
           return
         }
         try {
-          const res = await fetch(apiUrl('/api/reset-all'), {
+          const res = await authFetch(apiUrl('/api/reset-all'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({}),
@@ -641,7 +641,7 @@ export default function Home() {
     }
 
     try {
-      const res = await fetch(apiUrl('/api/settings'), {
+      const res = await authFetch(apiUrl('/api/settings'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settingsForm),
@@ -679,7 +679,7 @@ export default function Home() {
     }
 
     try {
-      const res = await fetch(apiUrl('/api/settings'), {
+      const res = await authFetch(apiUrl('/api/settings'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(defaultSettings),
@@ -698,7 +698,7 @@ export default function Home() {
     const checkAutoReset = async () => {
       if (!navigator.onLine) return // Skip auto-reset check when offline
       try {
-        const res = await fetch(apiUrl('/api/reset-all'), {
+        const res = await authFetch(apiUrl('/api/reset-all'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ checkAutoReset: true }),

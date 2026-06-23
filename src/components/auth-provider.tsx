@@ -2,8 +2,8 @@
 
 import { SessionProvider, useSession, signOut as nextAuthSignOut } from 'next-auth/react'
 import { ReactNode, useEffect, useState, createContext, useContext } from 'react'
-import { cacheSession, getCachedSession, clearCachedSession } from '@/lib/offline-db'
-import { apiUrl, isCapacitorApp } from '@/lib/api-config'
+import { cacheSession, getCachedSession, clearCachedSession, cacheApiToken, getCachedApiToken, clearCachedApiToken } from '@/lib/offline-db'
+import { apiUrl, isCapacitorApp, setApiToken } from '@/lib/api-config'
 
 // ====== Local Auth Context ======
 // This provides a fallback when NextAuth session is lost (e.g. WebView cookie issues)
@@ -30,6 +30,26 @@ const LocalAuthContext = createContext<{
 
 export function useLocalAuth() {
   return useContext(LocalAuthContext)
+}
+
+/**
+ * Initialize the API token from IndexedDB on app startup
+ * This ensures the token is available for API calls even after page refresh
+ */
+async function initApiTokenFromCache() {
+  try {
+    const cachedToken = await getCachedApiToken()
+    if (cachedToken) {
+      setApiToken(cachedToken)
+    }
+  } catch {
+    // Ignore errors
+  }
+}
+
+// Initialize token on module load
+if (typeof window !== 'undefined') {
+  initApiTokenFromCache()
 }
 
 /**
@@ -67,7 +87,10 @@ function SessionCacheWatcher({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (status === 'unauthenticated') {
       // Check if we have a cached session (could be offline or WebView cookie issue)
-      getCachedSession().then((cached) => {
+      Promise.all([
+        getCachedSession(),
+        getCachedApiToken(),
+      ]).then(([cached, cachedToken]) => {
         if (cached?.user) {
           // We have a cached session - use it
           setLocalAuth({
@@ -75,6 +98,10 @@ function SessionCacheWatcher({ children }: { children: ReactNode }) {
             user: cached.user,
             loginMethod: 'local',
           })
+          // Also restore the API token
+          if (cachedToken) {
+            setApiToken(cachedToken)
+          }
         } else if (navigator.onLine) {
           // Online but no cached session = genuine sign out
           setLocalAuth({ isAuthenticated: false, user: null, loginMethod: null })
@@ -83,7 +110,7 @@ function SessionCacheWatcher({ children }: { children: ReactNode }) {
     }
   }, [status])
 
-  // Local sign in function (direct API call, bypasses NextAuth cookie issues)
+  // Local sign in function (direct API call with JWT token)
   const localSignIn = async (email: string, password: string) => {
     try {
       const res = await fetch(apiUrl('/api/auth/credentials-login'), {
@@ -94,6 +121,11 @@ function SessionCacheWatcher({ children }: { children: ReactNode }) {
       const data = await res.json()
       if (!res.ok) {
         return { success: false, error: data.error || 'Login failed' }
+      }
+      // Store the JWT token in memory AND IndexedDB
+      if (data.token) {
+        setApiToken(data.token)
+        await cacheApiToken(data.token)
       }
       // Store session locally
       const userData = {
@@ -138,6 +170,9 @@ function SessionCacheWatcher({ children }: { children: ReactNode }) {
 
   // Local sign out
   const localSignOut = async () => {
+    // Clear everything
+    setApiToken(null)
+    await clearCachedApiToken()
     await clearCachedSession()
     setLocalAuth({ isAuthenticated: false, user: null, loginMethod: null })
     // Also sign out from NextAuth

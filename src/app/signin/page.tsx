@@ -11,7 +11,7 @@ import { Droplets, Mail, Lock, User, Eye, EyeOff } from 'lucide-react'
 import { useLanguage } from '@/components/language-provider'
 import { ThemeLanguageToggle } from '@/components/theme-language-toggle'
 import { useLocalAuth } from '@/components/auth-provider'
-import { isCapacitorApp, apiUrl } from '@/lib/api-config'
+import { isCapacitorApp, apiUrl, authFetch } from '@/lib/api-config'
 
 export default function SignInPage() {
   const router = useRouter()
@@ -40,7 +40,7 @@ export default function SignInPage() {
   }, [localAuth.isAuthenticated, localAuth.loginMethod, router])
 
   useEffect(() => {
-    fetch(apiUrl('/api/auth/providers-status'))
+    authFetch(apiUrl('/api/auth/providers-status'))
       .then(res => res.json())
       .then(data => setGoogleEnabled(data.google === true))
       .catch(() => setGoogleEnabled(false))
@@ -71,7 +71,7 @@ export default function SignInPage() {
         }
 
         // Web: NextAuth flow
-        const res = await fetch('/api/auth/register', {
+        const res = await authFetch('/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, email, password }),
@@ -173,7 +173,7 @@ export default function SignInPage() {
     if (!unverifiedEmail) return
     setLoading(true)
     try {
-      const res = await fetch(apiUrl('/api/auth/resend-verification'), {
+      const res = await authFetch(apiUrl('/api/auth/resend-verification'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: unverifiedEmail }),
