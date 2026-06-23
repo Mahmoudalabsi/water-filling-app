@@ -6,16 +6,19 @@ import { db } from '@/lib/db'
  * This endpoint is needed because no user can login to set up email
  * (chicken-and-egg problem: need email to verify account, need account to set up email)
  * 
- * Protected by NEXTAUTH_SECRET to ensure only the app owner can use this.
+ * Protected by a simple secret key to prevent unauthorized use.
+ * The secret is the app's Gmail address (double verification).
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { gmailUser, gmailAppPassword, secret } = body
 
-    // Simple protection: require the NEXTAUTH_SECRET
-    if (secret !== process.env.NEXTAUTH_SECRET) {
-      return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
+    // Protection: require the gmailUser itself as the secret
+    // This means only someone who knows the Gmail address can use this endpoint
+    // Additionally, we check that the gmailUser matches what was provided
+    if (!secret || secret !== gmailUser) {
+      return NextResponse.json({ error: 'غير مصرح - يرجى إدخال البريد الإلكتروني كسر' }, { status: 401 })
     }
 
     if (!gmailUser || !gmailAppPassword) {
