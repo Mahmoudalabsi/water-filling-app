@@ -10,10 +10,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Droplets, Mail, Lock, User, Eye, EyeOff } from 'lucide-react'
 import { useLanguage } from '@/components/language-provider'
 import { ThemeLanguageToggle } from '@/components/theme-language-toggle'
+import { useLocalAuth } from '@/components/auth-provider'
+import { isCapacitorApp, apiUrl } from '@/lib/api-config'
 
 export default function SignInPage() {
   const router = useRouter()
   const { t, locale, dir } = useLanguage()
+  const { localSignIn, localRegister, localAuth } = useLocalAuth()
   const [isRegister, setIsRegister] = useState(false)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -27,8 +30,17 @@ export default function SignInPage() {
   const [showVerifyPrompt, setShowVerifyPrompt] = useState(false)
   const [unverifiedEmail, setUnverifiedEmail] = useState('')
 
+  const isApp = isCapacitorApp()
+
+  // Redirect if already authenticated via local auth
   useEffect(() => {
-    fetch('/api/auth/providers-status')
+    if (localAuth.isAuthenticated && localAuth.loginMethod === 'local') {
+      router.push('/')
+    }
+  }, [localAuth.isAuthenticated, localAuth.loginMethod, router])
+
+  useEffect(() => {
+    fetch(apiUrl('/api/auth/providers-status'))
       .then(res => res.json())
       .then(data => setGoogleEnabled(data.google === true))
       .catch(() => setGoogleEnabled(false))
@@ -43,6 +55,22 @@ export default function SignInPage() {
 
     try {
       if (isRegister) {
+        // Use local register for Capacitor, NextAuth for web
+        if (isApp) {
+          const result = await localRegister(name, email, password)
+          if (!result.success) {
+            setError(result.error || t('registrationError'))
+            return
+          }
+          if (result.requiresVerification) {
+            router.push(`/verify-email?email=${encodeURIComponent(email)}`)
+            return
+          }
+          router.push('/')
+          return
+        }
+
+        // Web: NextAuth flow
         const res = await fetch('/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -90,6 +118,25 @@ export default function SignInPage() {
           setIsRegister(false)
         }
       } else {
+        // Login
+        if (isApp) {
+          // Use local sign in for Capacitor
+          const result = await localSignIn(email, password)
+          if (!result.success) {
+            if (result.error === 'EMAIL_NOT_VERIFIED') {
+              setUnverifiedEmail(email)
+              setShowVerifyPrompt(true)
+              setError('')
+            } else {
+              setError(t('invalidCredentials'))
+            }
+            return
+          }
+          router.push('/')
+          return
+        }
+
+        // Web: NextAuth flow
         const result = await signIn('credentials', {
           email,
           password,
@@ -126,7 +173,7 @@ export default function SignInPage() {
     if (!unverifiedEmail) return
     setLoading(true)
     try {
-      const res = await fetch('/api/auth/resend-verification', {
+      const res = await fetch(apiUrl('/api/auth/resend-verification'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: unverifiedEmail }),
@@ -297,7 +344,8 @@ export default function SignInPage() {
               </Button>
             </form>
 
-            {googleEnabled && (
+            {/* Google Sign In - only show in web browser, not in Capacitor app */}
+            {googleEnabled && !isApp && (
               <div className="mt-4">
                 <div className="relative">
                   <div className="absolute inset-0 flex items-center">

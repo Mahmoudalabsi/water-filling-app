@@ -15,8 +15,9 @@ import { useLanguage } from '@/components/language-provider'
 import { ThemeLanguageToggle } from '@/components/theme-language-toggle'
 import { getDayNames } from '@/lib/i18n'
 import { useOffline } from '@/hooks/use-offline'
-import { apiUrl } from '@/lib/api-config'
+import { apiUrl, isCapacitorApp } from '@/lib/api-config'
 import { cacheFamilies, getCachedFamilies, cacheSettings, getCachedSettings, addPendingOperation, refreshPendingCount as refreshOfflinePendingCount } from '@/lib/offline-db'
+import { useLocalAuth } from '@/components/auth-provider'
 import {
   Users,
   Plus,
@@ -114,6 +115,11 @@ export default function Home() {
   const { data: session, status: sessionStatus } = useSession()
   const { t, locale, dir } = useLanguage()
   const { isOnline, pendingCount, isSyncing, syncNow, refreshPendingCount } = useOffline()
+  const { localAuth, localSignOut } = useLocalAuth()
+
+  // Determine if user is authenticated (via NextAuth OR local auth)
+  const isAuthenticated = sessionStatus === 'authenticated' || localAuth.isAuthenticated
+  const currentUser = localAuth.loginMethod === 'local' ? localAuth.user : session?.user
   const [families, setFamilies] = useState<FamilyWithUsage[]>([])
   const [settings, setSettings] = useState<AppSettings>({ freeMinutesPerWeek: 12, pricePerMinute: 0.5, autoResetWeekly: true, resetDay: 6, lastAutoReset: null, resendApiKey: null })
   const [newFamilyName, setNewFamilyName] = useState('')
@@ -321,14 +327,14 @@ export default function Home() {
 
   useEffect(() => {
     const init = async () => {
-      if (sessionStatus === 'authenticated') {
+      if (isAuthenticated) {
         await refreshFamilies()
       }
       setLoading(false)
     }
     init()
     return () => { Object.values(timerIntervals.current).forEach(clearInterval) }
-  }, [refreshFamilies, sessionStatus])
+  }, [refreshFamilies, isAuthenticated])
 
   // Family operations via API
   const addFamily = async () => {
@@ -770,8 +776,8 @@ export default function Home() {
     )
   }
 
-  // Redirect to signin if not authenticated
-  if (sessionStatus === 'unauthenticated') {
+  // Redirect to signin if not authenticated (neither NextAuth nor local auth)
+  if (!isAuthenticated) {
     if (typeof window !== 'undefined') {
       window.location.href = '/signin'
     }
@@ -999,22 +1005,29 @@ export default function Home() {
             </Dialog>
 
             {/* User Menu */}
-            {session?.user && (
+            {currentUser && (
               <div className="flex items-center gap-1.5">
                 <div className="hidden sm:flex items-center gap-1.5 bg-gradient-to-r from-cyan-50 to-emerald-50 dark:from-cyan-900/20 dark:to-emerald-900/20 border border-cyan-200 dark:border-cyan-800 rounded-lg px-2 py-1">
-                  {session.user.image ? (
-                    <img src={session.user.image} alt={session.user.name || ''} className="w-5 h-5 rounded-full" />
+                  {currentUser.image ? (
+                    <img src={currentUser.image} alt={currentUser.name || ''} className="w-5 h-5 rounded-full" />
                   ) : (
                     <div className="w-5 h-5 rounded-full bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center">
                       <User className="w-3 h-3 text-white" />
                     </div>
                   )}
-                  <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300 max-w-[80px] truncate">{session.user.name || session.user.email}</span>
+                  <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300 max-w-[80px] truncate">{currentUser.name || currentUser.email}</span>
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => signOut({ callbackUrl: '/signin' })}
+                  onClick={async () => {
+                    if (localAuth.loginMethod === 'local') {
+                      await localSignOut()
+                      window.location.href = '/signin'
+                    } else {
+                      signOut({ callbackUrl: '/signin' })
+                    }
+                  }}
                   className="gap-1 text-xs border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-300 dark:hover:border-red-800 h-7 px-2"
                   title={t('signOut')}
                 >

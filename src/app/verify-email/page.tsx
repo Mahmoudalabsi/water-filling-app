@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Droplets, Mail, CheckCircle, RefreshCw } from 'lucide-react'
 import { useLanguage } from '@/components/language-provider'
 import { ThemeLanguageToggle } from '@/components/theme-language-toggle'
+import { apiUrl } from '@/lib/api-config'
 
 function VerifyEmailContent() {
   const router = useRouter()
@@ -40,7 +41,7 @@ function VerifyEmailContent() {
     setLoading(true)
 
     try {
-      const res = await fetch('/api/auth/verify-email', {
+      const res = await fetch(apiUrl('/api/auth/verify-email'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code }),
@@ -72,7 +73,7 @@ function VerifyEmailContent() {
     setError('')
 
     try {
-      const res = await fetch('/api/auth/resend-verification', {
+      const res = await fetch(apiUrl('/api/auth/resend-verification'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
