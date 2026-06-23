@@ -19,7 +19,7 @@ function getResend(apiKey: string): Resend {
 /**
  * Get Gmail credentials from env vars or database
  */
-async function getGmailCredentials(): Promise<{ user: string; pass: string } | null> {
+export async function getGmailCredentials(): Promise<{ user: string; pass: string } | null> {
   // Check env vars first
   const envUser = process.env.GMAIL_USER
   const envPass = process.env.GMAIL_APP_PASSWORD
